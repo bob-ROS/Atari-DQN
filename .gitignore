@@ -1,0 +1,8 @@
+*
+!/source/*.
+!*.gitignore
+!*.py
+!*.cpp
+!*.hpp
+!*.h
+!*.md
