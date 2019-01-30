@@ -25,4 +25,4 @@ for _ in range(1000):
 
 
 
-raw_input("Press Enter to continue")
+raw_input("Press E to continue")
