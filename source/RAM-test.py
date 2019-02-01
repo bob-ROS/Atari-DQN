@@ -14,7 +14,7 @@ class Agent():
 		self.state_size = state_size
 		self.action_size = action_size
 		self.memory = deque(maxlen=1000)
-		self.gamma = 0.90
+		self.gamma = 0.95
 		self.epsilon = 0.01
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
@@ -24,6 +24,8 @@ class Agent():
 	def _create_model(self):
 		model = Sequential()
 		model.add(Dense(128, input_dim=self.state_size, activation='relu'))
+		model.add(Dense(128, activation='relu'))
+		model.add(Dense(128, activation='relu'))
 		model.add(Dense(128, activation='relu'))
 		model.add(Dense(self.action_size, activation='linear'))
 		model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
