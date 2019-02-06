@@ -9,7 +9,7 @@ import random
 
 
 class DQN:
-	def __init__(self, state_size,act_size)
+	def __init__(self, state_size,act_size):
 		self.state_size = state_size
 		self.act_size = act_size
 		self.memory = deque(maxlen=2000)
@@ -30,5 +30,14 @@ class DQN:
 		self.memory.append((state,action,reward,next_state))
 
 
-DQN = DQN(state_size,action_size)
 
+if __name__ == "__main__":
+	env = gym.make('CartPole-v0')
+	state_size = env.observation_space.shape[0]
+	action_size = env.action_size.n
+
+	DQN = DQN(state_size,action_size)
+
+	for i in range(episodes):
+		env.reset()
+		
