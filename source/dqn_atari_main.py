@@ -47,10 +47,10 @@ observationProcessing(env)
 
 class DQN:
 	def __init__(self, state_size,act_size):
-		self.state_size = state_size
-		self.act_size = act_size
-		self.memory = deque(maxlen=2000)
-		self.model = self._create_model()
+        self.state_size = state_size
+        self.act_size = act_size
+        self.memory = deque(maxlen=2000)
+        self.model = self._create_model()
 
 	def _create_model(self):
 		model = Sequential()
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 	action_size = env.action_size.n
 
 	DQN = DQN(state_size,action_size)
-
+    episodes = 5
 	for i in range(episodes):
 		env.reset()
 		
