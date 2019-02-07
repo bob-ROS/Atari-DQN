@@ -37,8 +37,8 @@ class DQN:
         self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
         self.epsilon_decay = 0.9
-        self.epsilon_min = 0.05
-        self.gamma = 0.99
+        self.epsilon_min = 0.01
+        self.gamma = 0.90
         self.memory = deque(maxlen=2000)
         self.learning_rate = 0.001
         self.batch_size = 16
@@ -53,16 +53,12 @@ class DQN:
         #model.add(Flatten())
         #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
         #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, 8, 8, subsample=(4, 4), input_shape=(200, 600, 1), activation='relu'))
-
-        model.add(Convolution2D(64, 4, 4, subsample=(2, 2), activation='relu'))
-
-        model.add(Convolution2D(64, 3, 3,  activation='relu'))
-
+        model.add(Convolution2D(32, (8, 8), subsample=(4, 4), input_shape=(200, 600, 1), activation='relu'))
+        model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
+        model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(512,activation='relu'))
-
-        model.add(Dense(self.act_size, activation='linear'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dense(self.act_size,  activation='relu'))
         model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
         return model
 
@@ -91,7 +87,7 @@ class DQN:
             #print q_value
             #print q_table[0]
             q_table[0][action] = q_value
-            self.model.fit(state, q_table, epochs=10, verbose=0)
+            self.model.fit(state, q_table, epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
             #print "wtf2"
             self.epsilon *= self.epsilon_decay
@@ -99,7 +95,7 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('CartPole-v0')
+    env = gym.make('CartPole-v1')
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
@@ -119,7 +115,7 @@ if __name__ == "__main__":
         while not done:
             #state = observationProcessing(env)
             action = DQN._predict(state)
-            print DQN.model.predict(state)
+            #print DQN.model.predict(state)
 
             _, reward, done, _ = env.step(action)
             #experience replay
