@@ -31,38 +31,27 @@ def observationProcessing(env):
     return screen
 
 class DQN:
-    def __init__(self, state_size,act_size):
+    def __init__(self, state_size, action_size):
         self.state_size = state_size
-        self.act_size = act_size
-        self.input_dim = [0,200,600,1]
+        self.action_size = action_size
+        #self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
         self.epsilon_decay = 0.9
         self.epsilon_min = 0.05
-        self.gamma = 0.99
+        self.gamma = 0.9
         self.memory = deque(maxlen=2000)
-        self.learning_rate = 0.001
+        self.learning_rate = 0.0001
         self.batch_size = 16
         self.model = self._create_model()
 
 
     def _create_model(self):
         model = Sequential()
-        #model.add(Convolution2D(input_shape = (200, 600, 1), filters=32,kernel_size=8,strides=(4,4),padding='valid', data_format='channels_last', kernel_initializer='zeros',bias_initializer='zeros',activation='relu'))
-        #model.add(Convolution2D(filters=64,kernel_size=4,strides=(2,2),padding='valid', data_format='channels_last',kernel_initializer='zeros', bias_initializer='zeros', activation='relu'))
-        #model.add(Convolution2D(filters=64, kernel_size=4, strides=(1, 1), padding='valid', kernel_initializer='zeros',bias_initializer='zeros', data_format='channels_last', activation='relu'))
-        #model.add(Flatten())
-        #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
-        #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, 8, 8, subsample=(4, 4), input_shape=(200, 600, 1), activation='relu'))
-
-        model.add(Convolution2D(64, 4, 4, subsample=(2, 2), activation='relu'))
-
-        model.add(Convolution2D(64, 3, 3,  activation='relu'))
-
-        model.add(Flatten())
-        model.add(Dense(512,activation='relu'))
-
-        model.add(Dense(self.act_size, activation='linear'))
+        model.add(Dense(128, input_dim=self.state_size, activation='relu'))
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
         return model
 
@@ -71,7 +60,7 @@ class DQN:
 
     def _predict(self, state):
         if np.random.random() <= self.epsilon:
-            return random.randrange(self.act_size)
+            return random.randrange(self.action_size)
         act_values = self.model.predict(state)
         action = np.argmax(act_values)
         #print act_values
@@ -107,7 +96,7 @@ if __name__ == "__main__":
     plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 1000000
     for i in range(episodes):
-        env.reset()
+        #env.reset()
         done = False
         #currystate = observationProcessing(env)
         #pastastate = observationProcessing(env)
@@ -115,17 +104,20 @@ if __name__ == "__main__":
         #plt.imshow(state)
         #plt.show()
         time = 0
-        state = observationProcessing(env)
+        state = env.reset()
+        state = np.reshape(state, [1, state_size])
         while not done:
             #state = observationProcessing(env)
             action = DQN._predict(state)
-            print DQN.model.predict(state)
+            #print DQN.model.predict(state)
 
-            _, reward, done, _ = env.step(action)
+            next_state, reward, done, _ = env.step(action)
+            env.render()
+            next_state = np.reshape(next_state, [1, state_size])
             #experience replay
 
             #last_state = currystate
-            next_state = observationProcessing(env)
+            #next_state = observationProcessing(env)
             if not done:
                 #next_state = currystate - last_state
                 #next_state = currystate
@@ -142,5 +134,6 @@ if __name__ == "__main__":
 
             time += 1
             state = next_state
+
 
 
