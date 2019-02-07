@@ -37,8 +37,8 @@ class DQN:
         #self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
         self.epsilon_decay = 0.9
-        self.epsilon_min = 0.05
-        self.gamma = 0.9
+        self.epsilon_min = 0.01
+        self.gamma = 0.90
         self.memory = deque(maxlen=2000)
         self.learning_rate = 0.0001
         self.batch_size = 16
@@ -88,7 +88,7 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('CartPole-v0')
+    env = gym.make('CartPole-v1')
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
