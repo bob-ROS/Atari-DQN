@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense,Flatten,Convolution2D
+from keras.layers import Dense,Flatten,Convolution2D,BatchNormalization
 from keras.optimizers import Adam
 import matplotlib.pyplot as plt 
 from collections import deque
@@ -62,7 +62,7 @@ class DQN:
         self.act_size = act_size
         self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
-        self.epsilon_decay = 0.9
+        self.epsilon_decay = 0.99
         self.epsilon_min = 0.01
         self.gamma = 0.90
         self.memory = deque(maxlen=2000)
@@ -79,12 +79,16 @@ class DQN:
         #model.add(Flatten())
         #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
         #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(200, 500, 4)))
-        model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
-        model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
+        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(200, 500, 4),data_format='channels_last'))
+        model.add(BatchNormalization())
+        model.add(Convolution2D(64, (4, 4), subsample=(2,2) ,activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Convolution2D(64, (3, 3), subsample=(1,1),activation='relu'))
+        model.add(BatchNormalization())
         model.add(Flatten())
         model.add(Dense(512, activation='relu'))
-        model.add(Dense(self.act_size,  activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
         return model
 
@@ -103,7 +107,7 @@ class DQN:
         minibatch = random.sample(self.memory, self.batch_size)
         #minibatch = self.memory
         for state, action, reward, next_state, done in minibatch:
-            q_value = -5 # assume punishment
+            q_value = -10 # assume punishment
             if not done:
                 q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
             #print "wtf1"
@@ -159,7 +163,7 @@ if __name__ == "__main__":
             else:
                 #print "reward: {}".format(reward)
                 #reward = -reward #punishment sufficient?
-                next_state = 0
+                #next_state = 0
                 DQN._append_mem(state, action, reward, next_state, done)
                 if len(DQN.memory) >= DQN.batch_size:
                     # print "eat shit python cucks"
