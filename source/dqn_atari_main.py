@@ -16,38 +16,42 @@ import random
 np.random.seed(1234)
 
 # return observationProcessed(imagefromstep)
-def observationProcessing(env, new_episode = False):
+def observationProcessing(env, stacked_frames,new_episode = False, ):
     screen = env.render(mode='rgb_array')
     #screen = np.mean(screen,-1)
     screen = screen.mean(-1)
     #screen = screen[0:350][150:450]
     screen = screen[150:350,50:550]
-    plt.imshow(screen, cmap = plt.get_cmap('gray'))
-    plt.show()
+    #plt.imshow(screen, cmap = plt.get_cmap('gray'))
+    #plt.show()
     #print screen.shape
     #screen = np.expand_dims(screen, axis=0)
     #screen = np.expand_dims(screen, axis=2)
-    screen = screen.reshape(( 200, 500, 1))
+    screen = screen.reshape((1, 200, 500))
 
     #plt.imshow(screen[:,:,0])
     #plt.show()
     if new_episode:
         stacked_frames = deque([np.zeros((200, 50), dtype=np.int) for i in range(4)], maxlen=4)
-        s_t = np.stack((screen, screen, screen, screen), axis=2)
+        stacked_frames.append(screen)
+        stacked_frames.append(screen)
+        stacked_frames.append(screen)
+        stacked_frames.append(screen)
+
+        stacked_state = np.stack(stacked_frames, axis=-1)
+
 
     else:
-        
+        stacked_frames.append(screen)
+        stacked_state = np.stack(stacked_frames, axis=-1)
 
-
-
-
-    #print (s_t.shape)
+        #print (s_t.shape)
 
     #In Keras, need to reshape
 
 
 
-    return s_t.reshape(1, s_t.shape[0], s_t.shape[1], s_t.shape[2]) #1*200*600*4
+    return stacked_frames, stacked_state #1*200*600*4
 
 
 
@@ -124,6 +128,8 @@ if __name__ == "__main__":
     DQN = DQN(state_size,action_size)
     plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 1000000
+    stacked_frames = deque([np.zeros((200, 500), dtype=np.int) for i in range(4)], maxlen=4)
+
     for i in range(episodes):
         env.reset()
         done = False
@@ -133,7 +139,7 @@ if __name__ == "__main__":
         #plt.imshow(state)
         #plt.show()
         time = 0
-        state = observationProcessing(env, new_episode=True)
+        stacked_frames, state = observationProcessing(env, stacked_frames, new_episode=True)
         #plt.imshow(state[0,:,:,0], cmap='gray')
         #plt.show()
         while not done:
@@ -145,7 +151,7 @@ if __name__ == "__main__":
             #experience replay
 
             #last_state = currystate
-            next_state = observationProcessing(env)
+            stacked_frames, next_state = observationProcessing(env, stacked_frames)
             if not done:
                 #next_state = currystate - last_state
                 #next_state = currystate
