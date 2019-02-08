@@ -16,19 +16,41 @@ import random
 np.random.seed(1234)
 
 # return observationProcessed(imagefromstep)
-def observationProcessing(env):
+def observationProcessing(env, new_episode = False):
     screen = env.render(mode='rgb_array')
     #screen = np.mean(screen,-1)
     screen = screen.mean(-1)
     #screen = screen[0:350][150:450]
-    screen = screen[150:350][:]
-    #plt.imshow(screen, cmap = plt.get_cmap('gray'))
-    #plt.show()
+    screen = screen[150:350,50:550]
+    plt.imshow(screen, cmap = plt.get_cmap('gray'))
+    plt.show()
     #print screen.shape
     #screen = np.expand_dims(screen, axis=0)
     #screen = np.expand_dims(screen, axis=2)
-    screen = screen.reshape((-1, 200, 600, 1))
-    return screen
+    screen = screen.reshape(( 200, 500, 1))
+
+    #plt.imshow(screen[:,:,0])
+    #plt.show()
+    if new_episode:
+        stacked_frames = deque([np.zeros((200, 50), dtype=np.int) for i in range(4)], maxlen=4)
+        s_t = np.stack((screen, screen, screen, screen), axis=2)
+
+    else:
+        
+
+
+
+
+    #print (s_t.shape)
+
+    #In Keras, need to reshape
+
+
+
+    return s_t.reshape(1, s_t.shape[0], s_t.shape[1], s_t.shape[2]) #1*200*600*4
+
+
+
 
 class DQN:
     def __init__(self, state_size,act_size):
@@ -53,7 +75,7 @@ class DQN:
         #model.add(Flatten())
         #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
         #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, (8, 8), subsample=(4, 4), input_shape=(200, 600, 1), activation='relu'))
+        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(200, 500, 4)))
         model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
@@ -111,7 +133,9 @@ if __name__ == "__main__":
         #plt.imshow(state)
         #plt.show()
         time = 0
-        state = observationProcessing(env)
+        state = observationProcessing(env, new_episode=True)
+        #plt.imshow(state[0,:,:,0], cmap='gray')
+        #plt.show()
         while not done:
             #state = observationProcessing(env)
             action = DQN._predict(state)
