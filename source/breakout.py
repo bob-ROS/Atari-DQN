@@ -3,6 +3,7 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense,Flatten,Convolution2D
 from keras.optimizers import Adam
+from keras.layers.normalization import BatchNormalization
 import matplotlib.pyplot as plt 
 from collections import deque
 from keras.utils import plot_model
@@ -10,8 +11,13 @@ import random
 from PIL import Image
 import torchvision.transforms as transf
 import torch
+import tensorflow as tf
 
 np.random.seed(1234)
+
+
+def huber_loss(y_true, y_pred):
+    return tf.losses.huber_loss(y_true, y_pred)
 
 def plot_durations():
     plt.figure(2)
@@ -36,8 +42,8 @@ def observationProcessing(state, stacked_frames,new_episode = False ):
         #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
         stacked_frames.append(state)
         stacked_frames.append(state)
-        stacked_frames.append(state)
-        stacked_frames.append(state)
+        #stacked_frames.append(state)
+        #stacked_frames.append(state)
 
         stacked_state = np.stack(stacked_frames, axis=-1)
 
@@ -64,8 +70,8 @@ class DQN:
         self.epsilon_decay = 0.999
         self.epsilon_min = 0.01
         self.gamma = 0.90
-        self.memory = deque(maxlen=20000)
-        self.learning_rate = 0.001
+        self.memory = deque(maxlen=100000)
+        self.learning_rate = 0.00025
         self.batch_size = 32
         self.model = self._create_model()
 
@@ -78,13 +84,14 @@ class DQN:
         #model.add(Flatten())
         #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
         #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(84, 84, 4)))
+        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(84, 84, 2)))
+        #model.add(BatchNormalization())
         model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(512, activation='relu'))
-        model.add(Dense(self.act_size,  activation='relu'))
-        model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        model.add(Dense(126, activation='relu'))
+        model.add(Dense(self.act_size,  activation='linear'))
+        model.compile(loss=huber_loss, optimizer=Adam(lr=self.learning_rate))
         return model
 
     def _append_mem(self, state, action, reward, next_state, done):
@@ -120,7 +127,7 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('Breakout-v4')
+    env = gym.make('BreakoutDeterministic-v4')
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
@@ -129,7 +136,7 @@ if __name__ == "__main__":
     DQN = DQN(state_size,action_size)
     plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 10000000
-    stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
+    stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(2)], maxlen=2)
     rew_max = 0
     for i in range(episodes):
         new_episode = True
