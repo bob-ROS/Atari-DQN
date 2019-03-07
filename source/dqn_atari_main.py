@@ -63,7 +63,7 @@ class DQN:
             return random.randrange(self.action_size)
         act_values = self.model.predict(state)
         action = np.argmax(act_values)
-        #print act_values
+   
         return action
 
     def _train(self):
@@ -71,16 +71,11 @@ class DQN:
         #minibatch = self.memory
         for state, action, reward, next_state, done in minibatch:
             q_value = -5 # assume punishment
-            if not done:
+            if not done: #If survived
                 q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
-            #print "wtf1"
-            #target = q_value
-            #print self.model.predict(state)
-            q_table = self.model.predict(state)
-            #print q_value
-            #print q_table[0]
+            q_table = self.model.predict(state)  
             q_table[0][action] = q_value
-            self.model.fit(state, q_table, epochs=10, verbose=0)
+            self.model.fit(state, q_table, epochs=10, verbose=0) #Epochs = 10 iterations trained, not necessasary
         if self.epsilon > self.epsilon_min:
             #print "wtf2"
             self.epsilon *= self.epsilon_decay
@@ -96,35 +91,25 @@ if __name__ == "__main__":
     plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 1000000
     for i in range(episodes):
-        #env.reset()
+   
         done = False
-        #currystate = observationProcessing(env)
-        #pastastate = observationProcessing(env)
-        #state = currystate - pastastate
-        #plt.imshow(state)
-        #plt.show()
+  
         time = 0
         state = env.reset()
         state = np.reshape(state, [1, state_size])
         while not done:
-            #state = observationProcessing(env)
+          
             action = DQN._predict(state)
-            #print DQN.model.predict(state)
-
             next_state, reward, done, _ = env.step(action)
             env.render()
             next_state = np.reshape(next_state, [1, state_size])
-            #experience replay
+        
 
-            #last_state = currystate
-            #next_state = observationProcessing(env)
             if not done:
-                #next_state = currystate - last_state
-                #next_state = currystate
+ 
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                #print "reward: {}".format(reward)
-                #reward = -reward #punishment sufficient?
+  
                 next_state = 0
                 DQN._append_mem(state, action, reward, next_state, done)
                 if len(DQN.memory) >= DQN.batch_size:
