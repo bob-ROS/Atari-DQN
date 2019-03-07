@@ -1,5 +1,5 @@
 *
-!/source/
+!/source/*.
 /source/.idea/
 !*.gitignore
 !*.py
