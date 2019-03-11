@@ -1,5 +1,6 @@
 *
-!/source/
+!/source/*.
+*.png
 /source/.idea/
 !*.gitignore
 !*.py
