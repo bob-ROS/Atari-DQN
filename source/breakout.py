@@ -13,24 +13,11 @@ import torch
 
 np.random.seed(1234)
 
-def plot_durations():
-    plt.figure(2)
-    plt.clf()
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
-    plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    # Take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
 def observationProcessing(state, stacked_frames,new_episode = False ):
-    state = state[30:200,5:155,:]
-    state = transform(state)
-    state = np.array(state).reshape((1, 84, 84))
+    proc_state = transform(state)
+    proc_state = np.array(proc_state)
+    state = proc_state[17:97,:]
+    state = np.array(state).reshape((1, 80, 80))
 
     if new_episode:
         #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
@@ -49,8 +36,31 @@ def observationProcessing(state, stacked_frames,new_episode = False ):
     #In Keras, need to reshape
 
 
+    #double_state = stacked_state[80,80,4] - stacked_state[80,80,3]
+    return stacked_frames, stacked_state #1*80*80*4
 
-    return stacked_frames, stacked_state #1*200*600*4
+class PreProcessing:
+    def __init__(self):
+        self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
+        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,80)), transf.Grayscale(1)])
+
+    def rescale_crop(self,frame):
+         img = self.transform(frame)
+         img = np.array(img)
+         proc_img = img[17:97,:]
+         proc_img = np.array(proc_img).reshape((1, 80, 80))
+         return proc_img
+
+    def proc(self,frame,new_ep):
+        proc_image = self.rescale_crop(frame)
+        self.past_frames.append(proc_image)
+        if len(self.past_frames) == 4:
+            motion = (self.past_frames[0] + self.past_frames[1]) - (self.past_frames[3]+self.past_frames[2])
+        else:
+            motion = proc_image
+        state = np.stack([proc_image, motion], axis=-1)
+        return state
+
 
 
 
@@ -72,18 +82,12 @@ class DQN:
 
     def _create_model(self):
         model = Sequential()
-        #model.add(Convolution2D(input_shape = (200, 600, 1), filters=32,kernel_size=8,strides=(4,4),padding='valid', data_format='channels_last', kernel_initializer='zeros',bias_initializer='zeros',activation='relu'))
-        #model.add(Convolution2D(filters=64,kernel_size=4,strides=(2,2),padding='valid', data_format='channels_last',kernel_initializer='zeros', bias_initializer='zeros', activation='relu'))
-        #model.add(Convolution2D(filters=64, kernel_size=4, strides=(1, 1), padding='valid', kernel_initializer='zeros',bias_initializer='zeros', data_format='channels_last', activation='relu'))
-        #model.add(Flatten())
-        #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
-        #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(84, 84, 4)))
+        model.add(Convolution2D(32, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
         model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
         model.add(Dense(512, activation='relu'))
-        model.add(Dense(self.act_size,  activation='relu'))
+        model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
         return model
 
@@ -102,19 +106,15 @@ class DQN:
         minibatch = random.sample(self.memory, self.batch_size)
         #minibatch = self.memory
         for state, action, reward, next_state, done in minibatch:
-            q_value = 0 # assume punishment
+            q_value = reward # assume punishment
             if not done:
                 q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
-            #print "wtf1"
-            #target = q_value
-            #print self.model.predict(state)
+
             q_table = self.model.predict(state)
-            #print q_value
-            #print q_table[0]
+
             q_table[0][action] = q_value
             self.model.fit(state, q_table, epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
-            #print "wtf2"
             self.epsilon *= self.epsilon_decay
 
 
@@ -124,17 +124,15 @@ if __name__ == "__main__":
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
-    transform = transf.Compose([transf.ToPILImage(), transf.Resize((84,84)), transf.Grayscale(1)])
-
     DQN = DQN(state_size,action_size)
-    plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 10000000
-    stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
+    #stacked_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(2)], maxlen=4)
+    pre = PreProcessing()
     rew_max = 0
     for i in range(episodes):
         new_episode = True
         state = env.reset()
-        stacked_frames, state = observationProcessing(state, stacked_frames,new_episode)
+        state = pre.proc(state, new_episode)
         new_episode=False
         done = False
         time = 0
@@ -149,22 +147,22 @@ if __name__ == "__main__":
             #experience replay
             tot_rew += reward
             #last_state = currystate
-            stacked_frames, next_state = observationProcessing(next_state, stacked_frames,new_episode)
+            next_state = pre.proc(next_state,new_episode)
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                #print "reward: {}".format(reward)
-                #reward = -reward #punishment sufficient?
                 next_state = 0
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
-                if len(DQN.memory) >= DQN.batch_size:
-                    DQN._train()
                 print("episode: {}/{}, score: {}, epsilon: {:.2}, max score: {}".format(i, episodes, tot_rew, DQN.epsilon,rew_max))
 
             time += 1
             state = next_state
+            if len(DQN.memory) == 1500:
+                for i in range(100):
+                    if len(DQN.memory) >= DQN.batch_size:
+                        DQN._train()
 
 
