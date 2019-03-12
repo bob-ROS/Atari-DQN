@@ -14,32 +14,6 @@ import torch
 
 np.random.seed(1234)
 
-def observationProcessing(state, stacked_frames,new_episode = False ):
-    proc_state = transform(state)
-    proc_state = np.array(proc_state)
-    state = proc_state[17:97,:]
-    state = np.array(state).reshape((1, 80, 80))
-
-    if new_episode:
-        #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
-        stacked_frames.append(state)
-        stacked_frames.append(state)
-        stacked_frames.append(state)
-        stacked_frames.append(state)
-
-        stacked_state = np.stack(stacked_frames, axis=-1)
-
-
-    else:
-        stacked_frames.append(state)
-        stacked_state = np.stack(stacked_frames, axis=-1)
-
-    #In Keras, need to reshape
-
-
-    #double_state = stacked_state[80,80,4] - stacked_state[80,80,3]
-    return stacked_frames, stacked_state #1*80*80*4
-
 class PreProcessing:
     def __init__(self):
         self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
@@ -63,9 +37,6 @@ class PreProcessing:
         return state
 
 
-
-
-
 class DQN:
     def __init__(self, state_size,act_size):
         self.state_size = state_size
@@ -75,9 +46,9 @@ class DQN:
         self.epsilon_decay = 0.99
         self.epsilon_min = 0.01
         self.gamma = 0.90
-        self.memory = deque(maxlen=20000)
+        self.memory = deque(maxlen=200000)
         self.learning_rate = 0.001
-        self.batch_size = 32
+        self.batch_size = 128
         self.model = self._create_model()
 
 
@@ -88,6 +59,7 @@ class DQN:
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
         model.add(Dense(512, activation='relu'))
+        model.add(Dense(256, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -110,8 +82,8 @@ class DQN:
         return action
 
     def _train(self):
-        minloss = 10;
-        previousdata= deque(maxlen=10)
+        minloss = 0.15;
+        previousdata= deque(maxlen=100)
         #Do something with mean
         while True:
             minibatch = random.sample(self.memory, self.batch_size)
@@ -125,14 +97,14 @@ class DQN:
 
                 q_table[0][action] = q_value
 
-                history = self.model.fit(state, q_table, epochs=10, verbose=0)
+                history = self.model.fit(state, q_table, epochs=1, verbose=0)
                 previousdata.append(history.history['loss'][-1])
                 lossmean = sum(previousdata)/previousdata.__len__()
-                #print lossmean
+                print lossmean
 
             if self.epsilon > self.epsilon_min:
                 self.epsilon *= self.epsilon_decay
-            if minloss >= lossmean:
+            if minloss >= lossmean and previousdata.__len__() == previousdata.maxlen:
                 print "training  completed"
                 break
 
@@ -145,9 +117,11 @@ if __name__ == "__main__":
 
     DQN = DQN(state_size,action_size)
     episodes = 10000000
-    #stacked_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(2)], maxlen=4)
+
     pre = PreProcessing()
     rew_max = 0
+    avg_100rew=[]
+    states_in_mem = 0 
     for i in range(episodes):
 
         if i % 100 == 0 and i > 1:
@@ -162,7 +136,7 @@ if __name__ == "__main__":
         time = 0
         tot_rew=0
         while not done:
-            #state = observationProcessing(env)
+
             env.render()
             action = DQN._predict(state)
             #print DQN.model.predict(state)
@@ -177,19 +151,25 @@ if __name__ == "__main__":
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
+                states_in_mem += 1
             else:
                 next_state = 0
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
-                print("episode: {}/{}, score: {}, epsilon: {:.2}, max score: {}".format(i, episodes, tot_rew, DQN.epsilon,rew_max))
-
+                states_in_mem += 1
+                avg_100rew.append(tot_rew)
+                if i%100 ==0:
+                    avg100 = sum(avg_100rew)/len(avg_100rew)
+                print("episode: {}/{}, reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {}\n".format(i, episodes, tot_rew, DQN.epsilon,rew_max, avg100))
+                if i%100 ==0:
+                    del avg_100rew[:]
             time += 1
             state = next_state
-            if len(DQN.memory) >= 300:
-                if len(DQN.memory) >= DQN.batch_size:
+            if states_in_mem >= 150000:
+                if states_in_mem >= DQN.batch_size:
                     DQN._train()
-                    DQN.memory.clear()
+                    states_in_mem=0
 
 
 
