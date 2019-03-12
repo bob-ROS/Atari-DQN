@@ -3,6 +3,7 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense,Flatten,Convolution2D
 from keras.optimizers import Adam
+from keras import optimizers
 import matplotlib.pyplot as plt 
 from collections import deque
 from keras.utils import plot_model
@@ -88,7 +89,13 @@ class DQN:
         model.add(Flatten())
         model.add(Dense(512, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
-        model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
+        try:
+            model.load_weights('my_weights.model')
+            print("Succeeded to load model")
+        except:
+            print("Failed to load model")
+
         return model
 
     def _append_mem(self, state, action, reward, next_state, done):
@@ -103,19 +110,31 @@ class DQN:
         return action
 
     def _train(self):
-        minibatch = random.sample(self.memory, self.batch_size)
-        #minibatch = self.memory
-        for state, action, reward, next_state, done in minibatch:
-            q_value = reward # assume punishment
-            if not done:
-                q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
+        minloss = 10;
+        previousdata= deque(maxlen=10)
+        #Do something with mean
+        while True:
+            minibatch = random.sample(self.memory, self.batch_size)
+            #minibatch = self.memory
+            for state, action, reward, next_state, done in minibatch:
+                q_value = reward # assume punishment
+                if not done:
+                    q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
 
-            q_table = self.model.predict(state)
+                q_table = self.model.predict(state)
 
-            q_table[0][action] = q_value
-            self.model.fit(state, q_table, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+                q_table[0][action] = q_value
+
+                history = self.model.fit(state, q_table, epochs=10, verbose=0)
+                previousdata.append(history.history['loss'][-1])
+                lossmean = sum(previousdata)/previousdata.__len__()
+                #print lossmean
+
+            if self.epsilon > self.epsilon_min:
+                self.epsilon *= self.epsilon_decay
+            if minloss >= lossmean:
+                print "training  completed"
+                break
 
 
 
@@ -130,6 +149,11 @@ if __name__ == "__main__":
     pre = PreProcessing()
     rew_max = 0
     for i in range(episodes):
+
+        if i % 100 == 0 and i > 1:
+            DQN.model.save_weights('my_weights.model')
+            print("Saving weights")
+
         new_episode = True
         state = env.reset()
         state = pre.proc(state, new_episode)
@@ -143,7 +167,9 @@ if __name__ == "__main__":
             action = DQN._predict(state)
             #print DQN.model.predict(state)
 
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, lives = env.step(action)
+            if lives['ale.lives'] != 5:
+                done = True;
             #experience replay
             tot_rew += reward
             #last_state = currystate
@@ -160,9 +186,10 @@ if __name__ == "__main__":
 
             time += 1
             state = next_state
-            if len(DQN.memory) == 1500:
-                for i in range(100):
-                    if len(DQN.memory) >= DQN.batch_size:
-                        DQN._train()
+            if len(DQN.memory) >= 300:
+                if len(DQN.memory) >= DQN.batch_size:
+                    DQN._train()
+                    DQN.memory.clear()
+
 
 
