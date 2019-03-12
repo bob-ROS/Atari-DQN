@@ -34,16 +34,19 @@ def plot_durations():
         plt.plot(means.numpy())
 
 def observationProcessing(state, stacked_frames,new_episode = False ):
-    state = state[30:200,5:155,:]
+    state = state[95:195,5:155,:]
     state = transform(state)
+    #plt.imshow(state)
+    #plt.show()
     state = np.array(state).reshape((1, 84, 84))
+
 
     if new_episode:
         #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
         stacked_frames.append(state)
         stacked_frames.append(state)
-        #stacked_frames.append(state)
-        #stacked_frames.append(state)
+        stacked_frames.append(state)
+        stacked_frames.append(state)
 
         stacked_state = np.stack(stacked_frames, axis=-1)
 
@@ -68,30 +71,31 @@ class DQN:
         self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
         self.epsilon_decay = 0.999
-        self.epsilon_min = 0.01
+        self.epsilon_min = 0.1
         self.gamma = 0.90
         self.memory = deque(maxlen=100000)
-        self.learning_rate = 0.00025
+        self.learning_rate = 0.001
         self.batch_size = 32
         self.model = self._create_model()
 
 
     def _create_model(self):
         model = Sequential()
-        #model.add(Convolution2D(input_shape = (200, 600, 1), filters=32,kernel_size=8,strides=(4,4),padding='valid', data_format='channels_last', kernel_initializer='zeros',bias_initializer='zeros',activation='relu'))
-        #model.add(Convolution2D(filters=64,kernel_size=4,strides=(2,2),padding='valid', data_format='channels_last',kernel_initializer='zeros', bias_initializer='zeros', activation='relu'))
-        #model.add(Convolution2D(filters=64, kernel_size=4, strides=(1, 1), padding='valid', kernel_initializer='zeros',bias_initializer='zeros', data_format='channels_last', activation='relu'))
-        #model.add(Flatten())
-        #model.add(Dense(units=512,activation='relu',kernel_initializer='zeros', bias_initializer='zeros'))
-        #model.add(Dense(units=self.act_size,activation='linear',kernel_initializer='he_uniform', bias_initializer='zeros'))
-        model.add(Convolution2D(32, (8, 8), subsample=(4, 4),  activation='relu',input_shape=(84, 84, 2)))
-        #model.add(BatchNormalization())
+
+        model.add(Convolution2D(32, (8, 8), strides=(4, 4),  activation='relu',input_shape=(84, 84, 4)))
         model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(126, activation='relu'))
+        model.add(Dense(128, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
-        model.compile(loss=huber_loss, optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+
+        try:
+            model.load_weights('my_weights.model')
+            print("Succeeded to load model")
+        except:
+            print("Failed to load model")
+
         return model
 
     def _append_mem(self, state, action, reward, next_state, done):
@@ -107,17 +111,14 @@ class DQN:
 
     def _train(self):
         minibatch = random.sample(self.memory, self.batch_size)
-        #minibatch = self.memory
+
         for state, action, reward, next_state, done in minibatch:
-            q_value = 0 # assume punishment
+            q_value = -1 # assume punishment
             if not done:
                 q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
-            #print "wtf1"
-            #target = q_value
-            #print self.model.predict(state)
+
             q_table = self.model.predict(state)
-            #print q_value
-            #print q_table[0]
+
             q_table[0][action] = q_value
             self.model.fit(state, q_table, epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
@@ -127,7 +128,9 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('BreakoutDeterministic-v4')
+    #env = gym.make('BreakoutDeterministic-v4')
+    env = gym.make('BreakoutNoFrameskip-v4')
+
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
@@ -136,7 +139,7 @@ if __name__ == "__main__":
     DQN = DQN(state_size,action_size)
     plot_model(DQN.model, to_file='model.png',  show_layer_names=True, show_shapes=True)
     episodes = 10000000
-    stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(2)], maxlen=2)
+    stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
     rew_max = 0
     for i in range(episodes):
         new_episode = True
@@ -152,11 +155,16 @@ if __name__ == "__main__":
             action = DQN._predict(state)
             #print DQN.model.predict(state)
 
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, lives = env.step(action)
+            if lives['ale.lives'] != 5:
+                done = True;
             #experience replay
             tot_rew += reward
             #last_state = currystate
             stacked_frames, next_state = observationProcessing(next_state, stacked_frames,new_episode)
+
+            if len(DQN.memory) >= DQN.batch_size:
+                DQN._train()
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
@@ -167,9 +175,12 @@ if __name__ == "__main__":
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
-                if len(DQN.memory) >= DQN.batch_size:
-                    DQN._train()
+
                 print("episode: {}/{}, score: {}, epsilon: {:.2}, max score: {}".format(i, episodes, tot_rew, DQN.epsilon,rew_max))
+
+            if episodes % 10 and episodes > 1 == 0:
+                DQN.model.save_weights('my_weights.model')
+                print("Saving weights")
 
             time += 1
             state = next_state
