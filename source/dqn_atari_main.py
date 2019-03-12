@@ -132,6 +132,5 @@ if __name__ == "__main__":
 
             state = next_state
             if len(DQN.memory) >= DQN.batch_size:
-                print "eat shit python cucks"
                 DQN._train()
 
