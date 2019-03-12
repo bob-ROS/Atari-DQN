@@ -71,7 +71,7 @@ class DQN:
         self.act_size = act_size
         self.input_dim = [0,200,600,1]
         self.epsilon = 1.0
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.99
         self.epsilon_min = 0.01
         self.gamma = 0.90
         self.memory = deque(maxlen=20000)
