@@ -51,6 +51,8 @@ class DQN:
         self.learning_rate = 0.001
         self.batch_size = 128
         self.model = self._create_model()
+        self.target_net = self._create_model()
+        self.target_net.set_weights(self.model.get_weights())
 
 
     def _create_model(self):
@@ -85,7 +87,7 @@ class DQN:
         return action
 
     def _train(self):
-        minloss = 0.15;
+        minloss = 0.015;
         previousdata= deque(maxlen=100)
         #Do something with mean
         while True:
@@ -102,10 +104,10 @@ class DQN:
                 if done[i] == True:
                     q_value.append(reward[i])
                 else:
-                  q_value.append(reward[i] + self.gamma * np.amax(self.model.predict(next_state[i],batch_size=len(minibatch))[0]))
+                  q_value.append(reward[i] + self.gamma * np.amax(self.target_net.predict(next_state[i],batch_size=len(minibatch))[0]))
 
 
-            q_table = self.model.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
+            q_table = self.target_net.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
 
             #test = q_table[:,np.asarray(action)]
             #test2 = np.array(q_value)
@@ -122,8 +124,9 @@ class DQN:
             print lossmean
 
 
-            if minloss >= lossmean and previousdata.__len__() == previousdata.maxlen:
+            if minloss>=lossmean and len(previousdata)==previousdata.maxlen:
                 print "training  completed"
+                self.target_net.set_weights(self.model.get_weights()) # Copy weights to target net
                 break
 
 
@@ -171,13 +174,12 @@ if __name__ == "__main__":
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
-                states_in_mem += 1
             else:
                 next_state = np.zeros((1,80,80,2),dtype=np.uint8)
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
-                states_in_mem += 1
+
                 avg_100rew.append(tot_rew)
                 if i%100 ==0:
                     avg100 = sum(avg_100rew)/len(avg_100rew)
@@ -185,8 +187,9 @@ if __name__ == "__main__":
                 if i%100 ==0:
                     del avg_100rew[:]
             time += 1
+            states_in_mem += 1
             state = next_state
-            if states_in_mem >= 150000:
+            if states_in_mem >= 100000:
                 if states_in_mem >= DQN.batch_size:
                     DQN._train()
                     DQN.model.save_weights('my_weights.model')
