@@ -13,8 +13,6 @@ import torchvision.transforms as transf
 import torch
 import wrappers as wr
 
-#np.random.seed(1234)
-
 class PreProcessing:
     def __init__(self):
         self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
@@ -37,7 +35,6 @@ class PreProcessing:
         state = np.stack([proc_image, motion], axis=-1)
         return state
 
-
 class DQN:
     def __init__(self, state_size,act_size):
         self.state_size = state_size
@@ -54,17 +51,16 @@ class DQN:
         self.target_net = self._create_model()
         self.target_net.set_weights(self.model.get_weights())
 
-
     def _create_model(self):
         model = Sequential()
         model.add(Convolution2D(16, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
         model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        #model.add(Dense(1024, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -72,7 +68,6 @@ class DQN:
             print("Succeeded to load model")
         except:
             print("Failed to load model")
-
         return model
 
     def _append_mem(self, state, action, reward, next_state, done):
@@ -88,9 +83,11 @@ class DQN:
 
     def _train(self):
         minloss = 0.015;
-        previousdata= deque(maxlen=100)
+        previousdata= deque(maxlen=128)
+        iterations = 0
         #Do something with mean
         while True:
+            iterations += 1
             minibatch = random.sample(self.memory, self.batch_size)
             #minibatch = self.memory
             state =  np.array([each[0] for each in minibatch], ndmin=4)
@@ -99,23 +96,16 @@ class DQN:
             next_state = np.array([each[3] for each in minibatch], ndmin=4)
             done = np.array([each[4] for each in minibatch])
             q_value =[]
-
             for i in range(0, len(minibatch)):
                 if done[i] == True:
                     q_value.append(reward[i])
                 else:
                   q_value.append(reward[i] + self.gamma * np.amax(self.target_net.predict(next_state[i],batch_size=len(minibatch))[0]))
 
-
             q_table = self.target_net.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
 
-            #test = q_table[:,np.asarray(action)]
-            #test2 = np.array(q_value)
-            #q_table[:][np.asarray(action)] = q_value[:]
             for i in range(0, len(minibatch)):
                 q_table[i][action[i]] = q_value[i]
-
-            #vill ta
 
             history = self.model.fit(np.squeeze(state, axis=1), q_table, epochs=1, verbose=0)
 
@@ -123,8 +113,7 @@ class DQN:
             lossmean = sum(previousdata)/previousdata.__len__()
             print lossmean
 
-
-            if minloss>=lossmean and len(previousdata)==previousdata.maxlen:
+            if (minloss>=lossmean and iterations >= 1500) or iterations == 15000:
                 print "training  completed"
                 self.target_net.set_weights(self.model.get_weights()) # Copy weights to target net
                 break
