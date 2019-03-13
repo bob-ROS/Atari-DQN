@@ -43,8 +43,8 @@ class DQN:
         self.state_size = state_size
         self.act_size = act_size
         self.input_dim = [0,200,600,1]
-        self.epsilon = 1.0
-        self.epsilon_decay = 0.998
+        self.epsilon = 0.01
+        self.epsilon_decay = 0.0
         self.epsilon_min = 0.01
         self.gamma = 0.90
         self.memory = deque(maxlen=200000)
@@ -108,35 +108,36 @@ class DQN:
         for i in range(max_iterations):
             minibatch = random.sample(self.memory, self.batch_size)
             #minibatch = self.memory
-            state =  np.array([each[0] for each in minibatch], ndmin=4)
-            action = np.array([each[1] for each in minibatch])
-            reward = np.array([each[2] for each in minibatch])
-            next_state = np.array([each[3] for each in minibatch], ndmin=4)
-            done = np.array([each[4] for each in minibatch])
-            q_value =[]
+            for state, action, reward, next_state, done in minibatch:
+                q_value = reward # assume punishment
+                if not done:
+                    q_value = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
 
-            for i in range(0, len(minibatch)):
-                if done[i] == True:
-                    q_value.append(reward[i])
-                else:
-                  q_value.append(reward[i] + self.gamma * np.amax(self.model.predict(next_state[i],batch_size=len(minibatch))[0]))
+                q_table = self.model.predict(state)
 
+                q_table[0][action] = q_value
 
-            q_table = self.model.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
+                history = self.model.fit(state, q_table, epochs=1, verbose=0)
 
-            #test = q_table[:,np.asarray(action)]
-            #test2 = np.array(q_value)
-            #q_table[:][np.asarray(action)] = q_value[:]
-            for i in range(0, len(minibatch)):
-                q_table[i][action[i]] = q_value[i]
+                loss_history = np.roll(loss_history, 1)
+                loss_history[0] = history.history['loss'][-1]
 
-            #vill ta
+                # Calculate the average loss for the previous batches.
+                loss_mean = np.mean(loss_history)
 
-            history = self.model.fit(np.squeeze(state, axis=1), q_table, epochs=1, verbose=0)
+                # Print status.
+                pct_epoch = i / iterations_per_epoch
+                print("\tIteration: {0} ({1:.2f} epoch), Batch loss: {2:.4f}, Mean loss: {3:.4f}".format(i, pct_epoch, history.history['loss'][-1], loss_mean))
 
-            previousdata.append(history.history['loss'][-1])
-            lossmean = sum(previousdata)/previousdata.__len__()
-            print lossmean
+                # Stop the optimization if we have performed the required number
+                # of iterations and the loss-value is sufficiently low.
+                if i > min_iterations and loss_mean < minloss:
+                    break
+"""
+                history = self.model.fit(state, q_table, epochs=1, verbose=0)
+                previousdata.append(history.history['loss'][-1])
+                lossmean = sum(previousdata)/previousdata.__len__()
+                print("min loss: {:.2}, loss mean: {:.2}, prev data len: {}/100".format(minloss, lossmean, previousdata.__len__()))
 
 
             if minloss >= lossmean and previousdata.__len__() == previousdata.maxlen:
@@ -158,56 +159,39 @@ if __name__ == "__main__":
     pre = PreProcessing()
     rew_max = 0
     avg_100rew=[]
+    states_in_mem = 0 
     for i in range(episodes):
-
-
 
         new_episode = True
         state = env.reset()
         state = pre.proc(state, new_episode)
         new_episode=False
         done = False
-        time = 0
         tot_rew=0
-        if DQN.epsilon > DQN.epsilon_min:
-            DQN.epsilon *= DQN.epsilon_decay
 
         while not done:
 
-            #env.render()
+            env.render()
             action = DQN._predict(state)
             #print DQN.model.predict(state)
 
             next_state, reward, done, lives = env.step(action)
-            #if lives['ale.lives'] != 5:
-                #done = True;
             #experience replay
             tot_rew += reward
             #last_state = currystate
             next_state = pre.proc(next_state,new_episode)
             
-            if not done:
-                DQN._append_mem(state, action, reward, next_state, done)
-            else:
-                next_state = np.zeros((1,80,80,2),dtype=np.uint8)
+            if done:
+                next_state = 0
                 if tot_rew > rew_max:
                     rew_max = tot_rew
-                DQN._append_mem(state, action, reward, next_state, done)
                 avg_100rew.append(tot_rew)
                 if i%100 ==0:
                     avg100 = sum(avg_100rew)/len(avg_100rew)
-                print("episode: {}/{}, transitions: {}/200000 reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.1}\n".format(i, episodes, DQN.states_in_mem, tot_rew, DQN.epsilon,rew_max, avg100))
+                print("episode: {}/{}, reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.1}\n".format(i, episodes, tot_rew, DQN.epsilon,rew_max, avg100))
                 if i%100 ==0:
                     del avg_100rew[:]
-            time += 1
             state = next_state
-            if DQN.states_in_mem >= 190000:
-                if DQN.states_in_mem >= DQN.batch_size:
-                    DQN._train()
-                    DQN.model.save_weights('my_weights.model')
-                    print("Saving weights")
-                    DQN.epsilon = 1.0
-                    DQN.states_in_mem=0
 
 
 
