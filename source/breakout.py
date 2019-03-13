@@ -54,12 +54,14 @@ class DQN:
 
     def _create_model(self):
         model = Sequential()
-        model.add(Convolution2D(32, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
-        model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
+        model.add(Convolution2D(16, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
+        model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(512, activation='relu'))
-        model.add(Dense(256, activation='relu'))
+        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(1024, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -102,8 +104,7 @@ class DQN:
                 lossmean = sum(previousdata)/previousdata.__len__()
                 print lossmean
 
-            if self.epsilon > self.epsilon_min:
-                self.epsilon *= self.epsilon_decay
+
             if minloss >= lossmean and previousdata.__len__() == previousdata.maxlen:
                 print "training  completed"
                 break
@@ -124,9 +125,7 @@ if __name__ == "__main__":
     states_in_mem = 0 
     for i in range(episodes):
 
-        if i % 100 == 0 and i > 1:
-            DQN.model.save_weights('my_weights.model')
-            print("Saving weights")
+
 
         new_episode = True
         state = env.reset()
@@ -135,6 +134,9 @@ if __name__ == "__main__":
         done = False
         time = 0
         tot_rew=0
+        if DQN.epsilon > DQN.epsilon_min:
+            DQN.epsilon *= DQN.epsilon_decay
+
         while not done:
 
             env.render()
@@ -169,6 +171,9 @@ if __name__ == "__main__":
             if states_in_mem >= 150000:
                 if states_in_mem >= DQN.batch_size:
                     DQN._train()
+                    DQN.model.save_weights('my_weights.model')
+                    print("Saving weights")
+                    DQN.epsilon = 1
                     states_in_mem=0
 
 
