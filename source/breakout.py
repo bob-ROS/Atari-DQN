@@ -11,6 +11,7 @@ import random
 from PIL import Image
 import torchvision.transforms as transf
 import torch
+import wrappers as wr
 
 np.random.seed(1234)
 
@@ -113,6 +114,7 @@ class DQN:
 
 if __name__ == "__main__":
     env = gym.make('Breakout-v4')
+    env = wr.FireResetEnv(env)
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
