@@ -60,10 +60,8 @@ class DQN:
         model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
         model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
         model.add(Flatten())
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dense(512, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -160,6 +158,7 @@ if __name__ == "__main__":
     rew_max = 0
     avg_100rew=[]
     states_in_mem = 0 
+    lives_left=5
     for i in range(episodes):
 
         new_episode = True
@@ -176,6 +175,9 @@ if __name__ == "__main__":
             #print DQN.model.predict(state)
 
             next_state, reward, done, lives = env.step(action)
+            if lives['ale.lives'] < lives_left:
+                lives_left = lives['ale.lives']
+                next_state, reward, done, lives = env.step(0)
             #experience replay
             tot_rew += reward
             #last_state = currystate

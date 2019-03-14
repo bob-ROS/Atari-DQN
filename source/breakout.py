@@ -4,27 +4,27 @@ from keras.models import Sequential
 from keras.layers import Dense,Flatten,Convolution2D
 from keras.optimizers import Adam
 from keras import optimizers
+from keras import initializers
 import matplotlib.pyplot as plt 
 from collections import deque
 from keras.utils import plot_model
 import random
 from PIL import Image
 import torchvision.transforms as transf
-import torch
 import wrappers as wr
 
 #np.random.seed(1234)
 
 class PreProcessing:
     def __init__(self):
-        self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
+        self.past_frames = deque([np.zeros((105, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
         self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,80)), transf.Grayscale(1)])
 
     def rescale_crop(self,frame):
          img = self.transform(frame)
          img = np.array(img)
-         proc_img = img[17:97,:]
-         proc_img = np.array(proc_img).reshape((1, 80, 80))
+         #proc_img = img[17:97,:]
+         proc_img = np.array(img).reshape((1, 105, 80))
          return proc_img
 
     def proc(self,frame,new_ep):
@@ -46,24 +46,28 @@ class DQN:
         self.epsilon = 1.0
         self.epsilon_decay = 0.998
         self.epsilon_min = 0.01
-        self.gamma = 0.90
+        self.gamma = 0.97
         self.memory = deque(maxlen=200000)
         self.learning_rate = 0.001
         self.batch_size = 128
         self.model = self._create_model()
         self.states_in_mem = 0
+        self.q_values = np.zeros(shape=[200000, act_size], dtype=np.float)
+        self.estimation_errors = np.zeros(shape=200000, dtype=np.float)
 
 
     def _create_model(self):
+
+        init = initializers.TruncatedNormal(mean=0.0, stddev=2e-2, seed=None)
         model = Sequential()
-        model.add(Convolution2D(16, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
-        model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
-        model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
+        model.add(Convolution2D(16, 3, strides=2,padding='same', kernel_initializer=init,activation='relu',input_shape=(105, 80, 2)))
+        model.add(Convolution2D(32, 3, strides=2,padding='same' ,activation='relu',kernel_initializer=init))
+        model.add(Convolution2D(64, 3, strides=1,padding='same' ,activation='relu',kernel_initializer=init))
         model.add(Flatten())
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -81,16 +85,18 @@ class DQN:
     def _predict(self, state):
         if np.random.random() <= self.epsilon:
             return random.randrange(self.act_size)
-        act_values = self.model.predict(state)
-        action = np.argmax(act_values)
+        q_values = self.model.predict(state)
+        action = np.argmax(q_values)
         #print act_values
+        self.q_values[self.states_in_mem] = q_values
         return action
 
     def _train(self):
-        minloss = 0.15;
+        self.update_all_q_values()
+        minloss = 0.1;
         #previousdata= deque(maxlen=100)
         #Do something with mean
-        min_epochs=1
+        min_epochs=1.0
         max_epochs=10
 
         # Number of optimization iterations corresponding to one epoch.
@@ -115,36 +121,86 @@ class DQN:
             done = np.array([each[4] for each in minibatch])
             q_value =[]
 
-            for i in range(0, len(minibatch)):
-                if done[i] == True:
-                    q_value.append(reward[i])
+
+
+            for j in range(0, len(minibatch)):
+                if done[j] == True:
+                    q_value.append(reward[j])
                 else:
-                  q_value.append(reward[i] + self.gamma * np.amax(self.model.predict(next_state[i],batch_size=len(minibatch))[0]))
+                  q_next_state = self.model.predict(next_state[j], batch_size=len(minibatch))[0]
+                  q_value.append(reward[j] + self.gamma * np.amax(q_next_state))
 
+            state = np.squeeze(state, axis=1)
+            q_table = self.model.predict(state, batch_size=len(minibatch))
 
-            q_table = self.model.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
+            for k in range(0, len(minibatch)):
+                q_table[k][action[k]] = q_value[k]
 
-            #test = q_table[:,np.asarray(action)]
-            #test2 = np.array(q_value)
-            #q_table[:][np.asarray(action)] = q_value[:]
-            for i in range(0, len(minibatch)):
-                q_table[i][action[i]] = q_value[i]
+            history = self.model.fit(state, q_table, epochs=1, verbose=0)
 
-            #vill ta
+            loss_history = np.roll(loss_history, 1)
+            loss_history[0] = history.history['loss'][-1]
 
-            history = self.model.fit(np.squeeze(state, axis=1), q_table, epochs=1, verbose=0)
+            # Calculate the average loss for the previous batches.
+            loss_mean = np.mean(loss_history)
 
-            previousdata.append(history.history['loss'][-1])
-            lossmean = sum(previousdata)/previousdata.__len__()
-            print lossmean
-
-
-            if minloss >= lossmean and previousdata.__len__() == previousdata.maxlen:
+            # Print status.
+            pct_epoch = i / iterations_per_epoch
+            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, history.history['loss'][-1], loss_mean))
+            if i > min_iterations and loss_mean < minloss:
                 print "training  completed"
                 break
-"""
 
+    def update_all_q_values(self):
+        """
+        Update all Q-values in the replay-memory.
+        
+        When states and Q-values are added to the replay-memory, the
+        Q-values have been estimated by the Neural Network. But we now
+        have more data available that we can use to improve the estimated
+        Q-values, because we now know which actions were taken and the
+        observed rewards. We sweep backwards through the entire replay-memory
+        to use the observed data to improve the estimated Q-values.
+        """
 
+        # Copy old Q-values so we can print their statistics later.
+        # Note that the contents of the arrays are copied.
+        #self.q_values_old[:] = self.q_values[:]
+
+        # Process the replay-memory backwards and update the Q-values.
+        # This loop could be implemented entirely in NumPy for higher speed,
+        # but it is probably only a small fraction of the overall time usage,
+        # and it is much easier to understand when implemented like this.
+        #(state, action, reward, next_state, done,qval)
+        for k in range(len(self.memory)-1):
+            # Get the data for the k'th state in the replay-memory.
+            action = self.memory[k][1]
+            reward = self.memory[k][2]
+            end_life = self.memory[k][4]
+            #end_episode = self.end_episode[k]
+
+            # Calculate the Q-value for the action that was taken in this state.
+            if done:
+                # If the agent lost a life or it was game over / end of episode,
+                # then the value of taking the given action is just the reward
+                # that was observed in this single step. This is because the
+                # Q-value is defined as the discounted value of all future game
+                # steps in a single life of the agent. When the life has ended,
+                # there will be no future steps.
+                action_value = reward
+            else:
+                # Otherwise the value of taking the action is the reward that
+                # we have observed plus the discounted value of future rewards
+                # from continuing the game. We use the estimated Q-values for
+                # the following state and take the maximum, because we will
+                # generally take the action that has the highest Q-value.
+                action_value = reward + self.gamma * np.max(self.q_values[k + 1])
+
+            # Error of the Q-value that was estimated using the Neural Network.
+            self.estimation_errors[k] = abs(action_value - self.q_values[k, action])
+
+            # Update the Q-value with the better estimate.
+            self.q_values[k, action] = action_value
 
 if __name__ == "__main__":
     env = gym.make('Breakout-v4')
@@ -158,9 +214,9 @@ if __name__ == "__main__":
     pre = PreProcessing()
     rew_max = 0
     avg_100rew=[]
+    lives_left=5
+    
     for i in range(episodes):
-
-
 
         new_episode = True
         state = env.reset()
@@ -173,35 +229,30 @@ if __name__ == "__main__":
             DQN.epsilon *= DQN.epsilon_decay
 
         while not done:
-
             #env.render()
             action = DQN._predict(state)
-            #print DQN.model.predict(state)
 
             next_state, reward, done, lives = env.step(action)
-            #if lives['ale.lives'] != 5:
-                #done = True;
-            #experience replay
             tot_rew += reward
-            #last_state = currystate
+
             next_state = pre.proc(next_state,new_episode)
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                next_state = np.zeros((1,80,80,2),dtype=np.uint8)
+                next_state = np.zeros((1,105,80,2),dtype=np.uint8)
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
                 avg_100rew.append(tot_rew)
-                if i%100 ==0:
-                    avg100 = sum(avg_100rew)/len(avg_100rew)
-                print("episode: {}/{}, transitions: {}/200000 reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.1}\n".format(i, episodes, DQN.states_in_mem, tot_rew, DQN.epsilon,rew_max, avg100))
+                #if i%100 ==0:
+                avg100 = sum(avg_100rew)/len(avg_100rew)
+                print("episode: {}/{}, transitions: {}/200000 reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.2}\n".format(i, episodes, DQN.states_in_mem, tot_rew, DQN.epsilon,rew_max, avg100))
                 if i%100 ==0:
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 190000:
+            if DQN.states_in_mem >= 19900:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
                     DQN.model.save_weights('my_weights.model')
