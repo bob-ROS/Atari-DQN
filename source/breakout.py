@@ -2,6 +2,7 @@ import gym
 import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense,Flatten,Convolution2D
+from keras import initializers
 from keras.optimizers import Adam
 from keras import optimizers
 import matplotlib.pyplot as plt 
@@ -13,16 +14,20 @@ import torchvision.transforms as transf
 import torch
 import wrappers as wr
 
+import argparse as arg
+
 class PreProcessing:
     def __init__(self):
-        self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
-        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,80)), transf.Grayscale(1)])
+        self.past_frames = deque([np.zeros((84, 84), dtype=np.uint8) for i in range(1)], maxlen=4)
+        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,84)), transf.Grayscale(1)])
 
     def rescale_crop(self,frame):
          img = self.transform(frame)
          img = np.array(img)
-         proc_img = img[17:97,:]
-         proc_img = np.array(proc_img).reshape((1, 80, 80))
+         img = img[13:97,:]
+         proc_img = np.array(img).reshape((1, 84, 84))
+         #plt.imshow(img)
+         #plt.show()
          return proc_img
 
     def proc(self,frame,new_ep):
@@ -39,9 +44,9 @@ class DQN:
     def __init__(self, state_size,act_size):
         self.state_size = state_size
         self.act_size = act_size
-        self.input_dim = [0,200,600,1]
-        self.epsilon = 1.0
-        self.epsilon_decay = 0.999
+        self.input_dim = (84, 84, 2)#TODO, use this as input
+        self.epsilon = 1
+        self.epsilon_decay = 0.998
         self.epsilon_min = 0.1
         self.gamma = 0.90
         self.memory = deque(maxlen=200000)
@@ -53,16 +58,16 @@ class DQN:
 
     def _create_model(self):
         model = Sequential()
-        model.add(Convolution2D(16, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
-        model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
-        model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
+        model.add(Convolution2D(32, (8, 8), strides=(4, 4),  activation='relu', input_shape=self.input_dim))
+        model.add(Convolution2D(64, (4, 4), strides=(2, 2) ,activation='relu'))
+        model.add(Convolution2D(64, (3, 3), strides=(2, 2) ,activation='relu'))
         model.add(Flatten())
         model.add(Dense(512, activation='relu'))
         model.add(Dense(512, activation='relu'))
-        model.add(Dense(512, activation='relu'))
-        #model.add(Dense(1024, activation='relu'))
+       # model.add(Dense(1024,activation='relu'))
+       # model.add(Dense(1024, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
-        model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
+        model.compile(loss='mse', optimizer=optimizers.Adam(lr=0.001, epsilon=None, decay=0.0))
         try:
             model.load_weights('my_weights.model')
             print("Succeeded to load model")
@@ -82,7 +87,7 @@ class DQN:
         return action
 
     def _train(self):
-        minloss = 0.015;
+        minloss = 0.015
         previousdata= deque(maxlen=128)
         iterations = 0
         #Do something with mean
@@ -118,6 +123,36 @@ class DQN:
                 self.target_net.set_weights(self.model.get_weights()) # Copy weights to target net
                 break
 
+    def _trainOnce(self):
+
+        previousdata = deque(maxlen=128)
+        minibatch = random.sample(self.memory, self.batch_size)
+
+        state = np.array([each[0] for each in minibatch], ndmin=4)
+        action = np.array([each[1] for each in minibatch])
+        reward = np.array([each[2] for each in minibatch])
+        next_state = np.array([each[3] for each in minibatch], ndmin=4)
+        done = np.array([each[4] for each in minibatch])
+        q_value = []
+        for i in range(0, len(minibatch)):
+            if done[i] == True:
+                q_value.append(reward[i])
+            else:
+                q_value.append(reward[i] + self.gamma * np.amax(
+                    self.model.predict(next_state[i], batch_size=len(minibatch))[0]))
+
+        q_table = self.model.predict(np.squeeze(state, axis=1), batch_size=len(minibatch))
+
+        for i in range(0, len(minibatch)):
+            q_table[i][action[i]] = q_value[i]
+
+        history = self.model.fit(np.squeeze(state, axis=1), q_table, epochs=1, verbose=0)
+
+        #previousdata.append(history.history['loss'][-1])
+        #lossmean = sum(previousdata) / previousdata.__len__()
+        #print lossmean
+
+
 
 
 if __name__ == "__main__":
@@ -134,9 +169,6 @@ if __name__ == "__main__":
     avg_100rew=[]
     states_in_mem = 0 
     for i in range(episodes):
-
-
-
         new_episode = True
         state = env.reset()
         state = pre.proc(state, new_episode)
@@ -148,7 +180,6 @@ if __name__ == "__main__":
             DQN.epsilon *= DQN.epsilon_decay
 
         while not done:
-
             #env.render()
             action = DQN._predict(state)
             #print DQN.model.predict(state)
@@ -164,7 +195,7 @@ if __name__ == "__main__":
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                next_state = np.zeros((1,80,80,2),dtype=np.uint8)
+                next_state = np.zeros((1, 84, 84, 2),dtype=np.uint8)
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
@@ -178,13 +209,15 @@ if __name__ == "__main__":
             time += 1
             states_in_mem += 1
             state = next_state
-            if states_in_mem >= 100000:
+            if episodes % 10 == 0:
+                DQN.model.save_weights('my_weights.model')
+            if states_in_mem >= 128:
                 if states_in_mem >= DQN.batch_size:
-                    DQN._train()
-                    DQN.model.save_weights('my_weights.model')
-                    print("Saving weights")
-                    DQN.epsilon = 1.0
-                    states_in_mem=0
+                    DQN._trainOnce()
+                    #DQN.model.save_weights('my_weights.model')
+                    #print("Saving weights")
+                    #DQN.epsilon = 1.0
+                    #states_in_mem=0
 
 
 
