@@ -47,7 +47,7 @@ class DQN:
         self.state_size = state_size
         self.act_size = act_size
         self.input_dim = (84, 84, 2)#TODO, use this as input
-        self.epsilon = 1
+        self.epsilon = 1.0
         self.epsilon_decay = 0.95
         self.epsilon_min = 0.1
         self.gamma = 0.90
@@ -150,9 +150,7 @@ class DQN:
 
         history = self.model.fit(np.squeeze(state, axis=1), q_table, epochs=1, verbose=0)
 
-        #previousdata.append(history.history['loss'][-1])
-        #lossmean = sum(previousdata) / previousdata.__len__()
-        #print lossmean
+
 
 
 
@@ -184,14 +182,10 @@ if __name__ == "__main__":
         while not done:
             #env.render()
             action = DQN._predict(state)
-            #print DQN.model.predict(state)
 
             next_state, reward, done, lives = env.step(action)
-            #if lives['ale.lives'] != 5: #3 for spaceinvaderes, 5 for breakout
-                #done = True
-            #experience replay
             tot_rew += reward
-            #last_state = currystate
+
             next_state = pre.proc(next_state,new_episode)
             
             if not done:
@@ -204,7 +198,7 @@ if __name__ == "__main__":
 
                 avg_100rew.append(tot_rew)
                 if i%100 ==0:
-                    avg100 = sum(avg_100rew)/len(avg_100rew)
+                    avg100 = float(sum(avg_100rew)/len(avg_100rew))
                 print("episode: {}/{}, reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.2f}\n".format(i, episodes, tot_rew, DQN.epsilon,rew_max, avg100))
                 if i%100 ==0:
                     del avg_100rew[:]
@@ -213,7 +207,7 @@ if __name__ == "__main__":
             state = next_state
             if episodes % 5 == 0:
                 DQN.model.save_weights('my_weights.model')
-            #if states_in_mem >= 64:
+
             if states_in_mem >= DQN.batch_size:
                 DQN._trainOnce()
                     #DQN.model.save_weights('my_weights.model')
