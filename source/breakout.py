@@ -19,16 +19,17 @@ import argparse as arg
 class PreProcessing:
     def __init__(self):
         self.past_frames = deque([np.zeros((84, 84), dtype=np.uint8) for i in range(1)], maxlen=4)
-        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,84)), transf.Grayscale(1)])
+        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((84,84)), transf.Grayscale(1)])
 
     def rescale_crop(self,frame):
          img = self.transform(frame)
          img = np.array(img)
-         img = img[13:97,:]
-         proc_img = np.array(img).reshape((1, 84, 84))
+
+         #img = img[13:97,:]
+         #proc_img = np.array(img).reshape((1, 84, 84))
          #plt.imshow(img)
          #plt.show()
-         return proc_img
+         return   np.array(img).reshape((1, 84, 84))
 
     def proc(self,frame,new_ep):
         proc_image = self.rescale_crop(frame)
@@ -37,6 +38,7 @@ class PreProcessing:
             motion = (self.past_frames[0] + self.past_frames[1]) - (self.past_frames[3]+self.past_frames[2])
         else:
             motion = proc_image
+         #print motion to check if good!
         state = np.stack([proc_image, motion], axis=-1)
         return state
 
@@ -46,12 +48,12 @@ class DQN:
         self.act_size = act_size
         self.input_dim = (84, 84, 2)#TODO, use this as input
         self.epsilon = 1
-        self.epsilon_decay = 0.998
+        self.epsilon_decay = 0.95
         self.epsilon_min = 0.1
         self.gamma = 0.90
         self.memory = deque(maxlen=200000)
-        self.learning_rate = 0.001
-        self.batch_size = 128
+        self.learning_rate = 0.00025
+        self.batch_size = 64
         self.model = self._create_model()
         self.target_net = self._create_model()
         self.target_net.set_weights(self.model.get_weights())
@@ -67,7 +69,7 @@ class DQN:
        # model.add(Dense(1024,activation='relu'))
        # model.add(Dense(1024, activation='relu'))
         model.add(Dense(self.act_size,  activation='linear'))
-        model.compile(loss='mse', optimizer=optimizers.Adam(lr=0.001, epsilon=None, decay=0.0))
+        model.compile(loss='mse', optimizer=optimizers.Adam(lr=self.learning_rate, epsilon=None, decay=0.0))
         try:
             model.load_weights('my_weights.model')
             print("Succeeded to load model")
@@ -125,7 +127,7 @@ class DQN:
 
     def _trainOnce(self):
 
-        previousdata = deque(maxlen=128)
+        #previousdata = deque(maxlen=64)
         minibatch = random.sample(self.memory, self.batch_size)
 
         state = np.array([each[0] for each in minibatch], ndmin=4)
@@ -156,7 +158,7 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('Breakout-v4')
+    env = gym.make('SpaceInvadersDeterministic-v4')
     env = wr.FireResetEnv(env)
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
@@ -185,8 +187,8 @@ if __name__ == "__main__":
             #print DQN.model.predict(state)
 
             next_state, reward, done, lives = env.step(action)
-            if lives['ale.lives'] != 5:
-                done = True;
+            #if lives['ale.lives'] != 5: #3 for spaceinvaderes, 5 for breakout
+                #done = True
             #experience replay
             tot_rew += reward
             #last_state = currystate
@@ -203,17 +205,17 @@ if __name__ == "__main__":
                 avg_100rew.append(tot_rew)
                 if i%100 ==0:
                     avg100 = sum(avg_100rew)/len(avg_100rew)
-                print("episode: {}/{}, reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.2}\n".format(i, episodes, tot_rew, DQN.epsilon,rew_max, avg100))
+                print("episode: {}/{}, reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.2f}\n".format(i, episodes, tot_rew, DQN.epsilon,rew_max, avg100))
                 if i%100 ==0:
                     del avg_100rew[:]
             time += 1
             states_in_mem += 1
             state = next_state
-            if episodes % 10 == 0:
+            if episodes % 5 == 0:
                 DQN.model.save_weights('my_weights.model')
-            if states_in_mem >= 128:
-                if states_in_mem >= DQN.batch_size:
-                    DQN._trainOnce()
+            #if states_in_mem >= 64:
+            if states_in_mem >= DQN.batch_size:
+                DQN._trainOnce()
                     #DQN.model.save_weights('my_weights.model')
                     #print("Saving weights")
                     #DQN.epsilon = 1.0
