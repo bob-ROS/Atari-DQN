@@ -12,19 +12,22 @@ import random
 from PIL import Image
 import torchvision.transforms as transf
 import wrappers as wr
+from keras.models import Model
 
 #np.random.seed(1234)
+height=105
+width=80
 
 class PreProcessing:
     def __init__(self):
-        self.past_frames = deque([np.zeros((105, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
-        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,80)), transf.Grayscale(1)])
+        self.past_frames = deque([np.zeros((height,width), dtype=np.uint8) for i in range(1)], maxlen=4)
+        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
 
     def rescale_crop(self,frame):
          img = self.transform(frame)
          img = np.array(img)
          #proc_img = img[17:97,:]
-         proc_img = np.array(img).reshape((1, 105, 80))
+         proc_img = np.array(img).reshape((1, height, width))
          return proc_img
 
     def proc(self,frame,new_ep):
@@ -42,7 +45,7 @@ class DQN:
     def __init__(self, state_size,act_size):
         self.state_size = state_size
         self.act_size = act_size
-        self.input_dim = [0,200,600,1]
+        self.input_dim = [height,width,2]
         self.epsilon = 1.0
         self.epsilon_decay = 0.998
         self.epsilon_min = 0.01
@@ -60,9 +63,9 @@ class DQN:
 
         init = initializers.TruncatedNormal(mean=0.0, stddev=2e-2, seed=None)
         model = Sequential()
-        model.add(Convolution2D(16, 3, strides=2,padding='same', kernel_initializer=init,activation='relu',input_shape=(105, 80, 2)))
-        model.add(Convolution2D(32, 3, strides=2,padding='same' ,activation='relu',kernel_initializer=init))
-        model.add(Convolution2D(64, 3, strides=1,padding='same' ,activation='relu',kernel_initializer=init))
+        model.add(Convolution2D(16, 3, strides=2,padding='same', kernel_initializer=init, name='1conv16', activation='relu',input_shape=self.input_dim))
+        model.add(Convolution2D(32, 3, strides=2,padding='same' ,activation='relu',kernel_initializer=init, name='2conv32'))
+        model.add(Convolution2D(64, 3, strides=1,padding='same' ,activation='relu',kernel_initializer=init, name='3conv64'))
         model.add(Flatten())
         model.add(Dense(1024, activation='relu',kernel_initializer=init))
         model.add(Dense(1024, activation='relu',kernel_initializer=init))
@@ -92,21 +95,22 @@ class DQN:
         return action
 
     def _train(self):
-        self.update_all_q_values()
-        minloss = 0.1;
+        minloss = 1.0;
         #previousdata= deque(maxlen=100)
         #Do something with mean
         min_epochs=1.0
-        max_epochs=10
+        max_epochs=5
 
         # Number of optimization iterations corresponding to one epoch.
         iterations_per_epoch = self.states_in_mem / self.batch_size
 
         # Minimum number of iterations to perform.
         min_iterations = int(iterations_per_epoch * min_epochs)
+        min_iterations = 50
 
         # Maximum number of iterations to perform.
-        max_iterations = int(iterations_per_epoch * max_epochs)
+        max_iterations = int((iterations_per_epoch * max_epochs)/2)
+        max_iterations=100
 
         # Buffer for storing the loss-values of the most recent batches.
         loss_history = np.zeros(100, dtype=float)
@@ -120,8 +124,6 @@ class DQN:
             next_state = np.array([each[3] for each in minibatch], ndmin=4)
             done = np.array([each[4] for each in minibatch])
             q_value =[]
-
-
 
             for j in range(0, len(minibatch)):
                 if done[j] == True:
@@ -151,71 +153,71 @@ class DQN:
                 print "training  completed"
                 break
 
-    def update_all_q_values(self):
-        """
-        Update all Q-values in the replay-memory.
-        
-        When states and Q-values are added to the replay-memory, the
-        Q-values have been estimated by the Neural Network. But we now
-        have more data available that we can use to improve the estimated
-        Q-values, because we now know which actions were taken and the
-        observed rewards. We sweep backwards through the entire replay-memory
-        to use the observed data to improve the estimated Q-values.
-        """
-
-        # Copy old Q-values so we can print their statistics later.
-        # Note that the contents of the arrays are copied.
-        #self.q_values_old[:] = self.q_values[:]
-
-        # Process the replay-memory backwards and update the Q-values.
-        # This loop could be implemented entirely in NumPy for higher speed,
-        # but it is probably only a small fraction of the overall time usage,
-        # and it is much easier to understand when implemented like this.
-        #(state, action, reward, next_state, done,qval)
-        for k in range(len(self.memory)-1):
-            # Get the data for the k'th state in the replay-memory.
-            action = self.memory[k][1]
-            reward = self.memory[k][2]
-            end_life = self.memory[k][4]
-            #end_episode = self.end_episode[k]
-
-            # Calculate the Q-value for the action that was taken in this state.
-            if done:
-                # If the agent lost a life or it was game over / end of episode,
-                # then the value of taking the given action is just the reward
-                # that was observed in this single step. This is because the
-                # Q-value is defined as the discounted value of all future game
-                # steps in a single life of the agent. When the life has ended,
-                # there will be no future steps.
-                action_value = reward
-            else:
-                # Otherwise the value of taking the action is the reward that
-                # we have observed plus the discounted value of future rewards
-                # from continuing the game. We use the estimated Q-values for
-                # the following state and take the maximum, because we will
-                # generally take the action that has the highest Q-value.
-                action_value = reward + self.gamma * np.max(self.q_values[k + 1])
-
-            # Error of the Q-value that was estimated using the Neural Network.
-            self.estimation_errors[k] = abs(action_value - self.q_values[k, action])
-
-            # Update the Q-value with the better estimate.
-            self.q_values[k, action] = action_value
+def plot_conv_weights(model, layer):
+    W = model.get_layer(name=layer).get_weights()[0]
+    if len(W.shape) == 4:
+        W = np.squeeze(W)
+        W = W.reshape((W.shape[0], W.shape[1], W.shape[2]*W.shape[3])) 
+        fig, axs = plt.subplots(5,5, figsize=(8,8))
+        fig.subplots_adjust(hspace = .5, wspace=.001)
+        axs = axs.ravel()
+        for i in range(25):
+            axs[i].imshow(W[:,:,i])
+            axs[i].set_title(str(i))
+        plt.show()
+ 
+def display_activation(activations, col_size, row_size, act_index): 
+    activation = activations[act_index]
+    print("Dimensions of images: {}".format(activation.shape))
+    activation_index=0
+    fig, ax = plt.subplots(row_size, col_size, figsize=(10,10))#(row_size*2.5,col_size*1.5))
+    for row in range(0,row_size):
+        for col in range(0,col_size):
+            ax[row][col].imshow(activation[0, :, :, activation_index], cmap='gray')
+            activation_index += 1
+    plt.show()
 
 if __name__ == "__main__":
-    env = gym.make('Breakout-v4')
+    env = gym.make('SpaceInvaders-v4')
     env = wr.FireResetEnv(env)
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
     DQN = DQN(state_size,action_size)
-    episodes = 10000000
+    episodes = 1000000
 
     pre = PreProcessing()
     rew_max = 0
     avg_100rew=[]
     lives_left=5
-    
+
+
+    """PLOTTING OUTPUTS START"""
+    state = pre.proc(env.reset(), True)
+    for k in range(1000):
+        action = DQN._predict(state)
+        nxt,_,dne,_ = env.step(action)
+        nxt=pre.proc(nxt,False)
+        prv_state = state
+        state = nxt
+        if dne:
+            break
+
+    #plot_conv_weights(DQN.model,'2conv32')
+    layer_outputs = [layer.output for layer in DQN.model.layers]
+    activation_model = Model(inputs=DQN.model.input, outputs=layer_outputs)
+    activations = activation_model.predict(state,True)
+
+    state = np.squeeze(state, axis=0)
+    fig,ax = plt.subplots(1,2, figsize=(20,20))
+    ax[0].imshow(state[:,:,0], cmap='gray')
+    ax[1].imshow(state[:,:,1], cmap='gray')
+    plt.show()
+    display_activation(activations, 4, 4, 0)
+    display_activation(activations, 4, 8, 1)
+    display_activation(activations, 8, 8, 2)
+    """PLOTTING OUTPUTS END"""
+
     for i in range(episodes):
 
         new_episode = True
@@ -240,19 +242,19 @@ if __name__ == "__main__":
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                next_state = np.zeros((1,105,80,2),dtype=np.uint8)
+                next_state = np.zeros((1,height,width,2),dtype=np.uint8)
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
                 avg_100rew.append(tot_rew)
                 #if i%100 ==0:
                 avg100 = sum(avg_100rew)/len(avg_100rew)
-                print("episode: {}/{}, transitions: {}/200000 reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.2}\n".format(i, episodes, DQN.states_in_mem, tot_rew, DQN.epsilon,rew_max, avg100))
+                print("episode: {}/{}, transitions: {}/200000 reward: {}, epsilon: {:.2}, max reward: {}, mean past 100 rewards: {:.4f}\n".format(i, episodes, DQN.states_in_mem, tot_rew, DQN.epsilon,rew_max, avg100))
                 if i%100 ==0:
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 19900:
+            if DQN.states_in_mem >= 100000:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
                     DQN.model.save_weights('my_weights.model')

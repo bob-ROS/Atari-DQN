@@ -4,6 +4,7 @@ from keras.models import Sequential
 from keras.layers import Dense,Flatten,Convolution2D
 from keras.optimizers import Adam
 from keras import optimizers
+from keras import initializers
 import matplotlib.pyplot as plt 
 from collections import deque
 from keras.utils import plot_model
@@ -17,14 +18,14 @@ import wrappers as wr
 
 class PreProcessing:
     def __init__(self):
-        self.past_frames = deque([np.zeros((80, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
+        self.past_frames = deque([np.zeros((105, 80), dtype=np.uint8) for i in range(1)], maxlen=4)
         self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((105,80)), transf.Grayscale(1)])
 
     def rescale_crop(self,frame):
          img = self.transform(frame)
          img = np.array(img)
-         proc_img = img[17:97,:]
-         proc_img = np.array(proc_img).reshape((1, 80, 80))
+         #proc_img = img[17:97,:]
+         proc_img = np.array(img).reshape((1, 105, 80))
          return proc_img
 
     def proc(self,frame,new_ep):
@@ -55,13 +56,17 @@ class DQN:
 
 
     def _create_model(self):
+
+        init = initializers.TruncatedNormal(mean=0.0, stddev=2e-2, seed=None)
         model = Sequential()
-        model.add(Convolution2D(16, (8, 8), strides=(4, 4),  activation='relu',input_shape=(80, 80, 2)))
-        model.add(Convolution2D(32, (4, 4), strides=(2, 2) ,activation='relu'))
-        model.add(Convolution2D(64, (3, 3), strides=(1, 1) ,activation='relu'))
+        model.add(Convolution2D(16, 3, strides=2,padding='same', kernel_initializer=init,activation='relu',input_shape=(105, 80, 2)))
+        model.add(Convolution2D(32, 3, strides=2,padding='same' ,activation='relu',kernel_initializer=init))
+        model.add(Convolution2D(64, 3, strides=1,padding='same' ,activation='relu',kernel_initializer=init))
         model.add(Flatten())
-        model.add(Dense(512, activation='relu'))
-        model.add(Dense(512, activation='relu'))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
+        model.add(Dense(1024, activation='relu',kernel_initializer=init))
         model.add(Dense(self.act_size,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
@@ -146,8 +151,8 @@ class DQN:
 
 
 if __name__ == "__main__":
-    env = gym.make('Breakout-v4')
-    env = wr.FireResetEnv(env)
+    env = gym.make('SpaceInvaders-v4')
+    #env = wr.FireResetEnv(env)
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
