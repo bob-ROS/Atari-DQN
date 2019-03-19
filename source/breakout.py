@@ -234,52 +234,38 @@ if __name__ == "__main__":
     avg_100rew=[]
     lives_left=5
 
+
     if toPlot == True:
         """PLOTTING OUTPUTS START"""
-        state = pre.proc(env.reset(), True)
+        #state = pre.proc(env.reset(), True)
+        stacked_frames, state = preproc_stack(env.reset(), stacked_frames,True)
         for k in range(1000):
             action = DQN._predict(state)
             nxt,_,dne,_ = env.step(action)
-            nxt=pre.proc(nxt,False)
+            #nxt=pre.proc(nxt,False)
+            stacked_frames, nxt = preproc_stack(nxt, stacked_frames,False)
             prv_state = state
             state = nxt
             if dne:
                 break
 
-    """PLOTTING OUTPUTS START"""
-    #state = pre.proc(env.reset(), True)
-    stacked_frames, state = preproc_stack(env.reset(), stacked_frames,True)
-    for k in range(1000):
-        action = DQN._predict(state)
-        nxt,_,dne,_ = env.step(action)
-        #nxt=pre.proc(nxt,False)
-        stacked_frames, nxt = preproc_stack(nxt, stacked_frames,False)
-        prv_state = state
-        state = nxt
-        if dne:
-            break
+        #plot_conv_weights(DQN.model,'2conv32')
+        layer_outputs = [layer.output for layer in DQN.model.layers]
+        activation_model = Model(inputs=DQN.model.input, outputs=layer_outputs)
+        activations = activation_model.predict(state,True)
+
 
         state = np.squeeze(state, axis=0)
-        fig,ax = plt.subplots(1,2, figsize=(20,20))
+        fig,ax = plt.subplots(1,4, figsize=(20,20))
         ax[0].imshow(state[:,:,0], cmap='gray')
         ax[1].imshow(state[:,:,1], cmap='gray')
+        ax[2].imshow(state[:,:,2], cmap='gray')
+        ax[3].imshow(state[:,:,3], cmap='gray')
         plt.show()
         display_activation(activations, 4, 4, 0)
         display_activation(activations, 4, 8, 1)
         display_activation(activations, 8, 8, 2)
         """PLOTTING OUTPUTS END"""
-
-    state = np.squeeze(state, axis=0)
-    fig,ax = plt.subplots(1,4, figsize=(20,20))
-    ax[0].imshow(state[:,:,0], cmap='gray')
-    ax[1].imshow(state[:,:,1], cmap='gray')
-    ax[2].imshow(state[:,:,2], cmap='gray')
-    ax[3].imshow(state[:,:,3], cmap='gray')
-    plt.show()
-    display_activation(activations, 4, 4, 0)
-    display_activation(activations, 4, 8, 1)
-    display_activation(activations, 8, 8, 2)
-    """PLOTTING OUTPUTS END"""
 
     for i in range(episodes):
 
