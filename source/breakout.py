@@ -21,6 +21,7 @@ height=105
 width=80
 toPlot = False
 env = gym.make('SpaceInvaders-v4')
+transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
 
 possible_actions = np.array(np.identity(env.action_space.n,dtype=int).tolist())
 
@@ -32,10 +33,11 @@ possible_actions = np.array(np.identity(env.action_space.n,dtype=int).tolist())
 class PreProcessing:
     def __init__(self):
         self.past_frames = deque([np.zeros((height,width), dtype=np.uint8) for i in range(1)], maxlen=4)
-        self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
+        #self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
+        self.past_img_buffer = np.zeros((1,105,80))
 
     def rescale_crop(self,frame):
-         img = self.transform(frame)
+         img = transform(frame)
          img = np.array(img)
          #proc_img = img[17:97,:]
          proc_img = np.array(img).reshape((1, height, width))
@@ -44,19 +46,45 @@ class PreProcessing:
     def proc(self,frame,new_ep):
         proc_image = self.rescale_crop(frame)
         self.past_frames.append(proc_image)
-        if len(self.past_frames) == 4:
-            motion = (self.past_frames[0] + self.past_frames[1]) - (self.past_frames[3]+self.past_frames[2])
+        if new_ep:
+            diff = proc_image
         else:
-            motion = proc_image
+            diff = proc_image - self.past_frames[0]
+            self.past_img_buffer = diff
+        motion = diff + 0.5*self.past_img_buffer    
         state = np.stack([proc_image, motion], axis=-1)
         return state
+
+def preproc_stack(state, stacked_frames,new_episode = False ):
+    proc_state = transform(state)
+    state = np.array(proc_state)
+    #state = proc_state[17:97,:]
+    state = np.array(proc_state).reshape((1, height, width))
+
+    if new_episode:
+        #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
+        stacked_frames.append(state)
+        stacked_frames.append(state)
+        stacked_frames.append(state)
+        stacked_frames.append(state)
+
+        stacked_state = np.stack(stacked_frames, axis=-1)
+
+
+    else:
+        stacked_frames.append(state)
+        stacked_state = np.stack(stacked_frames, axis=-1)
+
+    #In Keras, need to reshape
+
+    return stacked_frames, stacked_state #1*80*80*4
 
 
 class DQN:
     def __init__(self, state_size,act_size):
         self.state_size = state_size
         self.act_size = act_size
-        self.input_dim = [height,width,2]
+        self.input_dim = [height,width,4]
         self.epsilon = 1.0
         self.epsilon_decay = 0.998
         self.epsilon_min = 0.01
@@ -200,7 +228,7 @@ if __name__ == "__main__":
 
     DQN = DQN(state_size,action_size)
     episodes = 1000000
-
+    stacked_frames = deque([np.zeros((105, 80), dtype=np.int) for i in range(4)], maxlen=4)
     pre = PreProcessing()
     rew_max = 0
     avg_100rew=[]
@@ -218,10 +246,18 @@ if __name__ == "__main__":
             if dne:
                 break
 
-        #plot_conv_weights(DQN.model,'2conv32')
-        layer_outputs = [layer.output for layer in DQN.model.layers]
-        activation_model = Model(inputs=DQN.model.input, outputs=layer_outputs)
-        activations = activation_model.predict(state,True)
+    """PLOTTING OUTPUTS START"""
+    #state = pre.proc(env.reset(), True)
+    stacked_frames, state = preproc_stack(env.reset(), stacked_frames,True)
+    for k in range(1000):
+        action = DQN._predict(state)
+        nxt,_,dne,_ = env.step(action)
+        #nxt=pre.proc(nxt,False)
+        stacked_frames, nxt = preproc_stack(nxt, stacked_frames,False)
+        prv_state = state
+        state = nxt
+        if dne:
+            break
 
         state = np.squeeze(state, axis=0)
         fig,ax = plt.subplots(1,2, figsize=(20,20))
@@ -233,11 +269,24 @@ if __name__ == "__main__":
         display_activation(activations, 8, 8, 2)
         """PLOTTING OUTPUTS END"""
 
+    state = np.squeeze(state, axis=0)
+    fig,ax = plt.subplots(1,4, figsize=(20,20))
+    ax[0].imshow(state[:,:,0], cmap='gray')
+    ax[1].imshow(state[:,:,1], cmap='gray')
+    ax[2].imshow(state[:,:,2], cmap='gray')
+    ax[3].imshow(state[:,:,3], cmap='gray')
+    plt.show()
+    display_activation(activations, 4, 4, 0)
+    display_activation(activations, 4, 8, 1)
+    display_activation(activations, 8, 8, 2)
+    """PLOTTING OUTPUTS END"""
+
     for i in range(episodes):
 
         new_episode = True
         state = env.reset()
-        state = pre.proc(state, new_episode)
+        #state = pre.proc(state, new_episode)
+        stacked_frames, state = preproc_stack(state, stacked_frames,new_episode)    
         new_episode=False
         done = False
         time = 0
@@ -252,7 +301,8 @@ if __name__ == "__main__":
             next_state, reward, done, lives = env.step(action)
             tot_rew += reward
 
-            next_state = pre.proc(next_state,new_episode)
+            #next_state = pre.proc(next_state,new_episode)
+            stacked_frames, next_state = preproc_stack(next_state, stacked_frames,new_episode)
             
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
