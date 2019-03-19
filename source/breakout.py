@@ -13,13 +13,21 @@ from PIL import Image
 import torchvision.transforms as transf
 import wrappers as wr
 from keras.models import Model
+import keras.backend as K
 
+import tensorflow as tf
 #np.random.seed(1234)
 height=105
 width=80
 toPlot = False
 env = gym.make('SpaceInvaders-v4')
+
 possible_actions = np.array(np.identity(env.action_space.n,dtype=int).tolist())
+
+#def customLoss(yTrue,yPred):
+#    d = yTrue - yPred
+#    d = tf.Print(d, [d], "Inside loss function")
+#    return K.mean(K.square(yTrue - yPred))
 
 class PreProcessing:
     def __init__(self):
@@ -98,7 +106,7 @@ class DQN:
         return action
 
     def _train(self):
-        minloss = 1.0;
+        minloss = 0.015;
         #previousdata= deque(maxlen=100)
         #Do something with mean
         min_epochs=1.0
@@ -140,7 +148,7 @@ class DQN:
 
             action2 = []
             for k in xrange(len(minibatch)):
-                action2.append(possible_actions[action[i]])
+                action2.append(possible_actions[action[k]])
                 #q_table[k][action[k]] = q_value[k]
             #inputtotrain =  action2 * np.array(q_value)
             action2 = np.array(action2)
@@ -261,7 +269,7 @@ if __name__ == "__main__":
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 128:
+            if DQN.states_in_mem >= 190000:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
                     DQN.model.save_weights('my_weights.model')
