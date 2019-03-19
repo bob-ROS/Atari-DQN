@@ -17,6 +17,9 @@ from keras.models import Model
 #np.random.seed(1234)
 height=105
 width=80
+toPlot = False
+env = gym.make('SpaceInvaders-v4')
+possible_actions = np.array(np.identity(env.action_space.n,dtype=int).tolist())
 
 class PreProcessing:
     def __init__(self):
@@ -133,22 +136,26 @@ class DQN:
                   q_value.append(reward[j] + self.gamma * np.amax(q_next_state))
 
             state = np.squeeze(state, axis=1)
-            q_table = self.model.predict(state, batch_size=len(minibatch))
+            #q_table = self.model.predict(state, batch_size=len(minibatch))
 
-            for k in range(0, len(minibatch)):
-                q_table[k][action[k]] = q_value[k]
-
-            history = self.model.fit(state, q_table, epochs=1, verbose=0)
-
+            action2 = []
+            for k in xrange(len(minibatch)):
+                action2.append(possible_actions[action[i]])
+                #q_table[k][action[k]] = q_value[k]
+            #inputtotrain =  action2 * np.array(q_value)
+            action2 = np.array(action2)
+            q_value = np.array(q_value)
+            inputtotrain = action2 * q_value[:, np.newaxis]
+            loss = self.model.train_on_batch(state, inputtotrain)
             loss_history = np.roll(loss_history, 1)
-            loss_history[0] = history.history['loss'][-1]
+            loss_history[0] = loss
 
             # Calculate the average loss for the previous batches.
             loss_mean = np.mean(loss_history)
 
             # Print status.
             pct_epoch = i / iterations_per_epoch
-            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, history.history['loss'][-1], loss_mean))
+            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, loss, loss_mean))
             if i > min_iterations and loss_mean < minloss:
                 print "training  completed"
                 break
@@ -178,8 +185,8 @@ def display_activation(activations, col_size, row_size, act_index):
     plt.show()
 
 if __name__ == "__main__":
-    env = gym.make('SpaceInvaders-v4')
-    env = wr.FireResetEnv(env)
+
+
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
@@ -191,32 +198,32 @@ if __name__ == "__main__":
     avg_100rew=[]
     lives_left=5
 
+    if toPlot == True:
+        """PLOTTING OUTPUTS START"""
+        state = pre.proc(env.reset(), True)
+        for k in range(1000):
+            action = DQN._predict(state)
+            nxt,_,dne,_ = env.step(action)
+            nxt=pre.proc(nxt,False)
+            prv_state = state
+            state = nxt
+            if dne:
+                break
 
-    """PLOTTING OUTPUTS START"""
-    state = pre.proc(env.reset(), True)
-    for k in range(1000):
-        action = DQN._predict(state)
-        nxt,_,dne,_ = env.step(action)
-        nxt=pre.proc(nxt,False)
-        prv_state = state
-        state = nxt
-        if dne:
-            break
+        #plot_conv_weights(DQN.model,'2conv32')
+        layer_outputs = [layer.output for layer in DQN.model.layers]
+        activation_model = Model(inputs=DQN.model.input, outputs=layer_outputs)
+        activations = activation_model.predict(state,True)
 
-    #plot_conv_weights(DQN.model,'2conv32')
-    layer_outputs = [layer.output for layer in DQN.model.layers]
-    activation_model = Model(inputs=DQN.model.input, outputs=layer_outputs)
-    activations = activation_model.predict(state,True)
-
-    state = np.squeeze(state, axis=0)
-    fig,ax = plt.subplots(1,2, figsize=(20,20))
-    ax[0].imshow(state[:,:,0], cmap='gray')
-    ax[1].imshow(state[:,:,1], cmap='gray')
-    plt.show()
-    display_activation(activations, 4, 4, 0)
-    display_activation(activations, 4, 8, 1)
-    display_activation(activations, 8, 8, 2)
-    """PLOTTING OUTPUTS END"""
+        state = np.squeeze(state, axis=0)
+        fig,ax = plt.subplots(1,2, figsize=(20,20))
+        ax[0].imshow(state[:,:,0], cmap='gray')
+        ax[1].imshow(state[:,:,1], cmap='gray')
+        plt.show()
+        display_activation(activations, 4, 4, 0)
+        display_activation(activations, 4, 8, 1)
+        display_activation(activations, 8, 8, 2)
+        """PLOTTING OUTPUTS END"""
 
     for i in range(episodes):
 
@@ -254,7 +261,7 @@ if __name__ == "__main__":
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 100000:
+            if DQN.states_in_mem >= 128:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
                     DQN.model.save_weights('my_weights.model')
