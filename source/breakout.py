@@ -19,7 +19,7 @@ import tensorflow as tf
 #np.random.seed(1234)
 height=105
 width=80
-toPlot = False
+toPlot = True
 env = gym.make('SpaceInvaders-v4')
 transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
 
