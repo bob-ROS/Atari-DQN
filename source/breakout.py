@@ -20,26 +20,21 @@ import tensorflow as tf
 height=105
 width=80
 toPlot = False
+toRender = True
 env = gym.make('SpaceInvaders-v4')
 transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
 
 possible_actions = np.array(np.identity(env.action_space.n,dtype=int).tolist())
 
-#def customLoss(yTrue,yPred):
-#    d = yTrue - yPred
-#    d = tf.Print(d, [d], "Inside loss function")
-#    return K.mean(K.square(yTrue - yPred))
-
 class PreProcessing:
     def __init__(self):
         self.past_frames = deque([np.zeros((height,width), dtype=np.uint8) for i in range(1)], maxlen=4)
-        #self.transform = transf.Compose([transf.ToPILImage(), transf.Resize((height,width)), transf.Grayscale(1)])
         self.past_img_buffer = np.zeros((1,105,80))
 
     def rescale_crop(self,frame):
          img = transform(frame)
          img = np.array(img)
-         #proc_img = img[17:97,:]
+
          proc_img = np.array(img).reshape((1, height, width))
          return proc_img
 
@@ -62,15 +57,11 @@ def preproc_stack(state, stacked_frames,new_episode = False ):
     state = np.array(proc_state).reshape((1, height, width))
 
     if new_episode:
-        #stacked_frames = deque([np.zeros((84, 84), dtype=np.int) for i in range(4)], maxlen=4)
         stacked_frames.append(state)
         stacked_frames.append(state)
         stacked_frames.append(state)
         stacked_frames.append(state)
-
         stacked_state = np.stack(stacked_frames, axis=-1)
-
-
     else:
         stacked_frames.append(state)
         stacked_state = np.stack(stacked_frames, axis=-1)
@@ -92,10 +83,18 @@ class DQN:
         self.memory = deque(maxlen=200000)
         self.learning_rate = 0.001
         self.batch_size = 128
-        self.model = self._create_model()
+        self.numberofnets = act_size
+        self.model[0] = self._create_model()
+        for i in xrange(1,act_size):
+            self.model[i] = self._create_model()
+            DQN.target_net.set_weights(DQN.model.get_weights())
+
+
+
         self.states_in_mem = 0
         self.q_values = np.zeros(shape=[200000, act_size], dtype=np.float)
         self.estimation_errors = np.zeros(shape=200000, dtype=np.float)
+
 
 
     def _create_model(self):
@@ -129,14 +128,12 @@ class DQN:
             return random.randrange(self.act_size)
         q_values = self.model.predict(state)
         action = np.argmax(q_values)
-        #print act_values
+
         self.q_values[self.states_in_mem] = q_values
         return action
 
     def _train(self):
         minloss = 0.015;
-        #previousdata= deque(maxlen=100)
-        #Do something with mean
         min_epochs=1.0
         max_epochs=5
 
@@ -168,30 +165,26 @@ class DQN:
                 if done[j] == True:
                     q_value.append(reward[j])
                 else:
-                  q_next_state = self.model.predict(next_state[j], batch_size=len(minibatch))[0]
-                  q_value.append(reward[j] + self.gamma * np.amax(q_next_state))
+                  q_next_state = self.target_net.predict(next_state[j], batch_size=len(minibatch))[0]
+                  q_value.append(reward[j] + self.gamma * q_next_state[self._predict(next_state[j])])
+            stacked_input_states = np.squeeze(state, axis=1)
+            q_table = self.model.predict(stacked_input_states, batch_size=len(minibatch))
 
-            state = np.squeeze(state, axis=1)
-            #q_table = self.model.predict(state, batch_size=len(minibatch))
-
-            action2 = []
+            #action2 = []
             for k in xrange(len(minibatch)):
-                action2.append(possible_actions[action[k]])
-                #q_table[k][action[k]] = q_value[k]
-            #inputtotrain =  action2 * np.array(q_value)
-            action2 = np.array(action2)
-            q_value = np.array(q_value)
-            inputtotrain = action2 * q_value[:, np.newaxis]
-            loss = self.model.train_on_batch(state, inputtotrain)
+                q_table[k][action[k]] = q_value[k]
+
+            history = self.model.fit(stacked_input_states, q_table, epochs=1, verbose=0)
+
             loss_history = np.roll(loss_history, 1)
-            loss_history[0] = loss
+            loss_history[0] = history.history['loss'][-1]
 
             # Calculate the average loss for the previous batches.
             loss_mean = np.mean(loss_history)
 
             # Print status.
             pct_epoch = i / iterations_per_epoch
-            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, loss, loss_mean))
+            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, history.history['loss'][-1], loss_mean))
             if i > min_iterations and loss_mean < minloss:
                 print "training  completed"
                 break
@@ -233,7 +226,6 @@ if __name__ == "__main__":
     rew_max = 0
     avg_100rew=[]
     lives_left=5
-
 
     if toPlot == True:
         """PLOTTING OUTPUTS START"""
@@ -281,7 +273,8 @@ if __name__ == "__main__":
             DQN.epsilon *= DQN.epsilon_decay
 
         while not done:
-            #env.render()
+            if toRender == True:
+                env.render()
             action = DQN._predict(state)
 
             next_state, reward, done, lives = env.step(action)
@@ -305,11 +298,12 @@ if __name__ == "__main__":
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 190000:
+            if DQN.states_in_mem >= 10000:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
-                    DQN.model.save_weights('my_weights.model')
+                    DQN.model.save_weights('my_weights.model') # FIX GOOD WAY OF SAVING!
                     print("Saving weights")
+                    DQN.target_net.set_weights(DQN.model.get_weights())
                     DQN.epsilon = 1.0
                     DQN.states_in_mem=0
 
