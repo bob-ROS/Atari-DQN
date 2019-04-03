@@ -54,7 +54,7 @@ def preproc_stack(state, stacked_frames,new_episode = False ):
     proc_state = transform(state)
     state = np.array(proc_state)
     #state = proc_state[17:97,:]
-    state = np.array(proc_state).reshape((1, height, width))
+    #state = np.array(proc_state).reshape((height, width))
 
     if new_episode:
         stacked_frames.append(state)
@@ -84,10 +84,11 @@ class DQN:
         self.learning_rate = 0.001
         self.batch_size = 128
         self.numberofnets = act_size
-        self.model[0] = self._create_model()
-        for i in xrange(1,act_size):
-            self.model[i] = self._create_model()
-            DQN.target_net.set_weights(DQN.model.get_weights())
+        self.model = []
+        self.model.append(self._create_model())  #assumes actions > 0, else this will be weird asf
+        for i in xrange(1,act_size): #
+            self.model.append(self._create_model())
+            self.model[i].set_weights(self.model[0].get_weights())
 
 
 
@@ -109,7 +110,7 @@ class DQN:
         model.add(Dense(1024, activation='relu',kernel_initializer=init))
         model.add(Dense(1024, activation='relu',kernel_initializer=init))
         model.add(Dense(1024, activation='relu',kernel_initializer=init))
-        model.add(Dense(self.act_size,  activation='linear'))
+        model.add(Dense(1,  activation='linear'))
         model.compile(loss='mse', optimizer=optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0))
         try:
             model.load_weights('my_weights.model')
@@ -126,68 +127,46 @@ class DQN:
     def _predict(self, state):
         if np.random.random() <= self.epsilon:
             return random.randrange(self.act_size)
-        q_values = self.model.predict(state)
-        action = np.argmax(q_values)
+        Qvalues = []
+        for i in xrange(self.act_size):
+            Qvalues.append(self.model[i].predict(np.expand_dims(state,axis=0)))
 
-        self.q_values[self.states_in_mem] = q_values
+        action = np.argmax(Qvalues)
+        #action = np.argmax(q_values)
+
+        #self.q_values[self.states_in_mem] = q_values
         return action
 
     def _train(self):
-        minloss = 0.015;
-        min_epochs=1.0
-        max_epochs=5
-
-        # Number of optimization iterations corresponding to one epoch.
-        iterations_per_epoch = self.states_in_mem / self.batch_size
-
-        # Minimum number of iterations to perform.
-        min_iterations = int(iterations_per_epoch * min_epochs)
-        min_iterations = 50
-
-        # Maximum number of iterations to perform.
-        max_iterations = int((iterations_per_epoch * max_epochs)/2)
-        max_iterations=100
-
-        # Buffer for storing the loss-values of the most recent batches.
-        loss_history = np.zeros(100, dtype=float)
-
-        for i in range(max_iterations):
             minibatch = random.sample(self.memory, self.batch_size)
-            #minibatch = self.memory
-            state =  np.array([each[0] for each in minibatch], ndmin=4)
+            state =  np.array([each[0] for each in minibatch], ndmin=3)
             action = np.array([each[1] for each in minibatch])
             reward = np.array([each[2] for each in minibatch])
-            next_state = np.array([each[3] for each in minibatch], ndmin=4)
+            next_state = np.array([each[3] for each in minibatch], ndmin=3)
             done = np.array([each[4] for each in minibatch])
             q_value =[]
 
-            for j in range(0, len(minibatch)):
+            for j in xrange(len(minibatch)):
                 if done[j] == True:
                     q_value.append(reward[j])
                 else:
-                  q_next_state = self.target_net.predict(next_state[j], batch_size=len(minibatch))[0]
-                  q_value.append(reward[j] + self.gamma * q_next_state[self._predict(next_state[j])])
-            stacked_input_states = np.squeeze(state, axis=1)
-            q_table = self.model.predict(stacked_input_states, batch_size=len(minibatch))
+                    q_next_state = []
+                    for i in xrange(self.act_size):
+                        temp = self.model[action[i]].predict(np.expand_dims(next_state[j],axis=0))
+                        q_next_state.append(temp)
+                    q_value.append(reward[j] + self.gamma * np.amax(q_next_state))
 
-            #action2 = []
-            for k in xrange(len(minibatch)):
-                q_table[k][action[k]] = q_value[k]
+            for i in xrange(len(minibatch)):
+                input_image = np.expand_dims(state[i],axis=0)
+                input_reward = np.array(q_value[i])
+                input_reward = input_reward[np.newaxis]
 
-            history = self.model.fit(stacked_input_states, q_table, epochs=1, verbose=0)
-
-            loss_history = np.roll(loss_history, 1)
-            loss_history[0] = history.history['loss'][-1]
-
-            # Calculate the average loss for the previous batches.
-            loss_mean = np.mean(loss_history)
-
-            # Print status.
-            pct_epoch = i / iterations_per_epoch
-            print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, history.history['loss'][-1], loss_mean))
-            if i > min_iterations and loss_mean < minloss:
-                print "training  completed"
-                break
+                history = self.model[action[i]].fit(input_image, input_reward, epochs=1, verbose=0)
+                print("\tIteration: {} Mean loss: {:.2f}".format(i,history.history['loss'][0],))
+            #print("\tIteration: {0}/min_iter: {1} ({2:.2f} epoch), Batch loss: {3:.4f}, Mean loss: {4:.4f}".format(i,min_iterations, pct_epoch, history.history['loss'][-1], loss_mean))
+            #if i > min_iterations and loss_mean < minloss:
+            #    print "training  completed"
+            #    break
 
 def plot_conv_weights(model, layer):
     W = model.get_layer(name=layer).get_weights()[0]
@@ -231,7 +210,7 @@ if __name__ == "__main__":
         """PLOTTING OUTPUTS START"""
         #state = pre.proc(env.reset(), True)
         stacked_frames, state = preproc_stack(env.reset(), stacked_frames,True)
-        for k in range(1000):
+        for k in xrange(1000):
             action = DQN._predict(state)
             nxt,_,dne,_ = env.step(action)
             #nxt=pre.proc(nxt,False)
@@ -259,7 +238,7 @@ if __name__ == "__main__":
         display_activation(activations, 8, 8, 2)
         """PLOTTING OUTPUTS END"""
 
-    for i in range(episodes):
+    for i in xrange(episodes):
 
         new_episode = True
         state = env.reset()
@@ -286,7 +265,7 @@ if __name__ == "__main__":
             if not done:
                 DQN._append_mem(state, action, reward, next_state, done)
             else:
-                next_state = np.zeros((1,height,width,2),dtype=np.uint8)
+                next_state = np.zeros((1,height,width,4),dtype=np.uint8)
                 if tot_rew > rew_max:
                     rew_max = tot_rew
                 DQN._append_mem(state, action, reward, next_state, done)
@@ -298,12 +277,11 @@ if __name__ == "__main__":
                     del avg_100rew[:]
             time += 1
             state = next_state
-            if DQN.states_in_mem >= 10000:
+            if DQN.states_in_mem >= 100000:
                 if DQN.states_in_mem >= DQN.batch_size:
                     DQN._train()
-                    DQN.model.save_weights('my_weights.model') # FIX GOOD WAY OF SAVING!
+                    #DQN.model.save_weights('my_weights.model') # FIX GOOD WAY OF SAVING!
                     print("Saving weights")
-                    DQN.target_net.set_weights(DQN.model.get_weights())
                     DQN.epsilon = 1.0
                     DQN.states_in_mem=0
 
